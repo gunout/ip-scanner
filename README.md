@@ -1,5 +1,6 @@
 <!-- ============================================================ -->
 <!--  IP EXPERT SCANNER — FUTURISTIC NEON ROSE README             -->
+<!--  Repo: github.com/gunout/ip-scanner                          -->
 <!-- ============================================================ -->
 
 <p align="center">
@@ -7,13 +8,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gunout/ip-expert-scanner">
+  <a href="https://github.com/gunout/ip-scanner">
     <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/banner_neon.svg" alt="Banner" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/gunout/ip-expert-scanner">
+  <a href="https://github.com/gunout/ip-scanner">
     <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/hero_matrix.svg" alt="Hero Card" width="100%" />
   </a>
 </p>
@@ -23,21 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
-</p>
-
-<p align="center">
-  <a href="https://github.com/gunout/ip-expert-scanner">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/dark_mode_neon.svg">
-      <img alt="IP Expert Scanner" src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/light_mode_neon.svg">
-    </picture>
-  </a>
-  <br/><br/>
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">⚡ <code>whatami</code></h2>
@@ -54,30 +41,31 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🛠️ <code>tech_stack</code></h2>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/PythonIcon.svg" width="60" height="60" alt="Python" title="Python 3.12"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/FastAPIIcon.svg" width="60" height="60" alt="FastAPI" title="FastAPI"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/DockerIcon.svg" width="60" height="60" alt="Docker" title="Docker"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/PostgreSQLIcon.svg" width="60" height="60" alt="PostgreSQL" title="PostgreSQL"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/RedisIcon.svg" width="60" height="60" alt="Redis" title="Redis"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/PlaywrightIcon.svg" width="60" height="60" alt="Playwright" title="Playwright"/>
+  <img src="https://img.shields.io/badge/Python-3.12-FF2D95?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/FastAPI-0.115-FF2D95?style=for-the-badge&logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/Celery-5.4-FF2D95?style=for-the-badge&logo=celery&logoColor=white" />
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/NmapIcon.svg" width="60" height="60" alt="Nmap" title="Nmap"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/MasscanIcon.svg" width="60" height="60" alt="Masscan" title="Masscan"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/HTMLIcon.svg" width="60" height="60" alt="HTML5" title="HTML5"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/CSSIcon.svg" width="60" height="60" alt="CSS3" title="CSS3"/>
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/icons/JSIcon.svg" width="60" height="60" alt="JavaScript" title="JavaScript"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-16-FF69B4?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Redis-7-FF69B4?style=for-the-badge&logo=redis&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-Compose-FF69B4?style=for-the-badge&logo=docker&logoColor=white" />
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://img.shields.io/badge/Masscan-FFB6D9?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Nmap-FFB6D9?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Playwright-FFB6D9?style=for-the-badge&logo=playwright&logoColor=white" />
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🚀 <code>features</code></h2>
@@ -111,7 +99,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🎯 <code>scan_modes</code></h2>
@@ -127,17 +115,17 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🏗️ <code>architecture</code></h2>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/architecture_neon.svg" alt="Architecture" width="90%" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/architecture_neon.svg" alt="Architecture" width="90%" />
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">📦 <code>installation</code></h2>
@@ -158,7 +146,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🔌 <code>api_endpoints</code></h2>
@@ -173,7 +161,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">🧪 <code>quick_test</code></h2>
@@ -187,7 +175,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">📈 <code>github_stats</code></h2>
@@ -199,7 +187,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">⚠️ <code>legal_warning</code></h2>
@@ -213,7 +201,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <h2 align="center">👤 <code>author</code></h2>
@@ -225,7 +213,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <div align="center">
@@ -233,12 +221,12 @@
   <br/><br/>
 
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/footer_neon.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/footer_neon.svg">
-    <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/footer_neon.svg" alt="Footer" width="100%" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/footer_neon.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/footer_neon.svg">
+    <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/footer_neon.svg" alt="Footer" width="100%" />
   </picture>
 </div>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
