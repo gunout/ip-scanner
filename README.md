@@ -3,18 +3,18 @@
 <!-- ============================================================ -->
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
+  <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/divider_neon.svg" alt="Divider" />
 </p>
 
 <p align="center">
   <a href="https://github.com/gunout/ip-expert-scanner">
-    <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/banner_neon.svg" alt="Banner" />
+    <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/banner_neon.svg" alt="Banner" />
   </a>
 </p>
 
 <p align="center">
   <a href="https://github.com/gunout/ip-expert-scanner">
-    <img src="https://raw.githubusercontent.com/gunout/ip-expert-scanner/main/assets/images/hero_matrix.svg" alt="Hero Card" width="100%" />
+    <img src="https://raw.githubusercontent.com/gunout/ip-scanner/main/assets/images/hero_matrix.svg" alt="Hero Card" width="100%" />
   </a>
 </p>
 
