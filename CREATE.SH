@@ -11,7 +11,8 @@ log()  { echo -e "${CYAN}[*]${NC} $1"; }
 ok()   { echo -e "${GREEN}[+]${NC} $1"; }
 fail() { echo -e "${RED}[!]${NC} $1"; exit 1; }
 
-APP_PORT=9745
+# IMPORTANT : exporté, sinon ${APP_PORT} se résout en vide dans compose
+export APP_PORT=9745
 
 log "Arrêt de l'ancien déploiement..."
 docker compose down -v 2>/dev/null || true
@@ -31,10 +32,15 @@ mkdir -p backend frontend screenshots
 ok "Dossiers créés."
 
 # ---------- requirements ----------
+# packaging + kombu EXPLICITES : kombu.transport.redis fait
+# `from packaging.version import Version` → sans packaging, Celery
+# plante au premier .delay() (ModuleNotFoundError).
 cat > backend/requirements.txt <<'EOF'
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 celery==5.4.0
+kombu==5.4.2
+packaging==24.1
 redis==5.2.0
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
@@ -48,11 +54,13 @@ playwright==1.48.0
 EOF
 
 # ---------- Dockerfile ----------
+# NOTE : plus de `|| true` sur playwright install-deps → si ça casse,
+# le build échoue visiblement au lieu de produire un conteneur cassé.
 cat > backend/Dockerfile <<'EOF'
 FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nmap masscan \
+    nmap masscan curl \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
     libgbm1 libasound2 libpango-1.0-0 libpangocairo-1.0-0 \
@@ -62,7 +70,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install chromium \
-    && playwright install-deps chromium || true
+    && playwright install-deps chromium
 COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -109,33 +117,29 @@ class HostResult(Base):
     service = Column(String)
     version = Column(String)
     state = Column(String)
-    # URL / HTTP
     url = Column(String, nullable=True)
     http_status = Column(Integer, nullable=True)
     server_header = Column(String, nullable=True)
     title = Column(String, nullable=True)
     redirect_to = Column(String, nullable=True)
     tls_version = Column(String, nullable=True)
-    # Certificat SSL
     cert_subject = Column(String, nullable=True)
     cert_issuer = Column(String, nullable=True)
     cert_valid_from = Column(String, nullable=True)
     cert_valid_until = Column(String, nullable=True)
     cert_days_left = Column(Integer, nullable=True)
-    cert_expired = Column(Integer, nullable=True)  # 0/1
-    cert_san = Column(Text, nullable=True)         # JSON string
-    # Crawl
+    cert_expired = Column(Integer, nullable=True)
+    cert_san = Column(Text, nullable=True)
     links_count = Column(Integer, nullable=True)
-    links_json = Column(Text, nullable=True)       # JSON string
-    # Screenshot
-    screenshot = Column(String, nullable=True)     # filename
+    links_json = Column(Text, nullable=True)
+    screenshot = Column(String, nullable=True)
     last_seen = Column(DateTime, default=datetime.utcnow, index=True)
     job = relationship("ScanJob", back_populates="results")
 
 Index("ix_host_port", HostResult.ip, HostResult.port)
 EOF
 
-# ---------- scanner.py ----------
+# ---------- scanner.py (inchangé) ----------
 cat > backend/scanner.py <<'EOF'
 import subprocess, json, socket, nmap, re
 import requests
@@ -182,9 +186,6 @@ def resolve_target(target: str) -> dict:
     return {"hostname": hostname, "ips": ips, "url": url, "scheme": scheme}
 
 
-# ============================================================
-#  SSL CERTIFICATE
-# ============================================================
 def scan_certificate(hostname: str, port: int = 443) -> dict:
     result = {
         "subject": None, "issuer": None,
@@ -219,9 +220,6 @@ def scan_certificate(hostname: str, port: int = 443) -> dict:
     return result
 
 
-# ============================================================
-#  CRAWL LINKS
-# ============================================================
 def crawl_links(url: str, max_links: int = 50, same_domain: bool = True) -> list:
     links = []
     try:
@@ -251,11 +249,7 @@ def crawl_links(url: str, max_links: int = 50, same_domain: bool = True) -> list
     return links
 
 
-# ============================================================
-#  SCREENSHOT
-# ============================================================
 def capture_screenshot(url: str, filename: str) -> str | None:
-    """Capture URL en PNG. Retourne le filename ou None."""
     import os
     SCREENSHOT_DIR = "/app/screenshots"
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -274,9 +268,6 @@ def capture_screenshot(url: str, filename: str) -> str | None:
         return None
 
 
-# ============================================================
-#  HTTP + SSL + CRAWL + SCREENSHOT (orchestré)
-# ============================================================
 def scan_url_full(url: str, ip: str = None, job_id: int = None, do_crawl=True, do_screenshot=True) -> dict:
     result = {
         "url": url, "http_status": None, "server_header": None,
@@ -288,7 +279,6 @@ def scan_url_full(url: str, ip: str = None, job_id: int = None, do_crawl=True, d
     }
     headers = {"User-Agent": "IPExpertScanner/1.0"}
 
-    # HTTP
     try:
         r = requests.get(url, headers=headers, timeout=8, allow_redirects=False, verify=False)
         result["http_status"] = r.status_code
@@ -307,7 +297,6 @@ def scan_url_full(url: str, ip: str = None, job_id: int = None, do_crawl=True, d
     except Exception as e:
         result["server_header"] = f"ERROR: {type(e).__name__}"
 
-    # SSL cert
     hostname = urlparse(url).hostname
     if url.startswith("https://") and hostname:
         cert = scan_certificate(hostname, 443)
@@ -320,13 +309,11 @@ def scan_url_full(url: str, ip: str = None, job_id: int = None, do_crawl=True, d
         result["cert_expired"] = cert.get("expired")
         result["cert_san"] = json.dumps(cert.get("san", []))[:2000]
 
-    # Crawl
     if do_crawl:
         links = crawl_links(url, max_links=50)
         result["links_count"] = len(links)
         result["links_json"] = json.dumps(links)[:8000]
 
-    # Screenshot
     if do_screenshot and job_id:
         fname = f"job{job_id}_{re.sub(r'[^a-zA-Z0-9]', '_', (ip or hostname or 'x'))[:20]}.png"
         shot = capture_screenshot(url, fname)
@@ -335,9 +322,6 @@ def scan_url_full(url: str, ip: str = None, job_id: int = None, do_crawl=True, d
     return result
 
 
-# ============================================================
-#  MASSCAN + NMAP (inchangé)
-# ============================================================
 def masscan_discover(target, ports="1-65535", rate=1000):
     cmd = ["masscan", target, f"-p{ports}", f"--rate={rate}", "--open-only", "-oJ", "-"]
     try:
@@ -405,13 +389,9 @@ def probe_unknown(ip, port):
     return "unknown"
 
 
-# ============================================================
-#  ORCHESTRATEUR
-# ============================================================
 def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=None):
     ttype = detect_target_type(target)
 
-    # ---------- URL ----------
     if ttype == "url":
         info = resolve_target(target)
         if not info["ips"]:
@@ -440,7 +420,6 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
             })
             results.append(full)
 
-            # Scan ports web rapides
             web_ports = "80,443,8080,8443,3000,5000,8000"
             open_ports = masscan_discover(ip, web_ports, rate=500)
             if open_ports:
@@ -459,7 +438,6 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
                     results.append(r)
         return results
 
-    # ---------- IP / CIDR ----------
     base_keys = {
         "url": None, "http_status": None, "server_header": None,
         "title": None, "redirect_to": None, "tls_version": None,
@@ -543,6 +521,10 @@ def run_scan(job_id):
 EOF
 
 # ---------- main.py ----------
+# Différences vs. original :
+#  - run_scan.delay() entouré de try/except → 503 avec message lisible
+#    au lieu d'un 500 vide (21 bytes "Internal Server Error")
+#  - traceback.print_exc() pour garantir la stack dans les logs
 cat > backend/main.py <<'EOF'
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -553,6 +535,7 @@ from models import Base, ScanJob, HostResult
 from tasks import run_scan
 from scanner import detect_target_type
 import os
+import traceback
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="IP Expert Scanner")
@@ -569,13 +552,27 @@ def create_scan(req: ScanRequest):
     mode = "url" if ttype == "url" else req.mode
     if mode not in ("fast", "balanced", "deep", "smart", "url"):
         raise HTTPException(400, "Mode invalide")
+
     db = SessionLocal()
-    job = ScanJob(target=req.target, target_type=ttype, ports=req.ports, mode=mode)
-    db.add(job); db.commit(); db.refresh(job)
-    run_scan.delay(job.id)
-    db.close()
-    return {"job_id": job.id, "status": "pending",
-            "mode": mode, "target_type": ttype}
+    try:
+        job = ScanJob(target=req.target, target_type=ttype, ports=req.ports, mode=mode)
+        db.add(job); db.commit(); db.refresh(job)
+
+        try:
+            run_scan.delay(job.id)
+        except Exception as e:
+            traceback.print_exc()
+            job.status = "error"
+            db.commit()
+            raise HTTPException(
+                status_code=503,
+                detail=f"File d'attente indisponible: {type(e).__name__}: {e}",
+            )
+
+        return {"job_id": job.id, "status": "pending",
+                "mode": mode, "target_type": ttype}
+    finally:
+        db.close()
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: int):
@@ -603,7 +600,6 @@ def get_job(job_id: int):
             "target": job.target, "target_type": job.target_type,
             "mode": job.mode, "results": results}
 
-# Sert les screenshots
 if os.path.isdir("/app/screenshots"):
     app.mount("/screenshots", StaticFiles(directory="/app/screenshots"), name="screenshots")
 
@@ -612,6 +608,11 @@ if os.path.isdir("static"):
 EOF
 
 # ---------- docker-compose.yml ----------
+# Différences vs. original :
+#  - redis healthcheck (le "Started" ne veut pas dire "ready")
+#  - api healthcheck + worker dépend de api healthy → évite la race
+#    "relation scan_jobs does not exist"
+#  - worker lance create_all en préambule, ceinture + bretelles
 cat > docker-compose.yml <<EOF
 services:
   db:
@@ -628,6 +629,11 @@ services:
   redis:
     image: redis:7
     ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
   api:
     build: ./backend
     ports: ["${APP_PORT}:8000"]
@@ -636,20 +642,31 @@ services:
       - ./screenshots:/app/screenshots
     depends_on:
       db: {condition: service_healthy}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
     environment:
       DATABASE_URL: postgresql://scanner:scanner@db:5432/scanner
       REDIS_URL: redis://redis:6379/0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/jobs/0')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
   worker:
     build: ./backend
-    command: celery -A tasks worker --loglevel=info --concurrency=2
+    # create_all en préambule : si l'API n'a pas encore fini de créer
+    # les tables, le worker les crée lui-même (idempotent).
+    command: >
+      sh -c "python -c 'from database import engine; from models import Base; Base.metadata.create_all(bind=engine)' &&
+             celery -A tasks worker --loglevel=info --concurrency=2"
     cap_add: [NET_RAW, NET_ADMIN]
     shm_size: "2gb"
     volumes:
       - ./screenshots:/app/screenshots
     depends_on:
       db: {condition: service_healthy}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
+      api: {condition: service_healthy}
     environment:
       DATABASE_URL: postgresql://scanner:scanner@db:5432/scanner
       REDIS_URL: redis://redis:6379/0
@@ -769,7 +786,6 @@ cat > frontend/index.html <<'HTML'
   .radar-spinner{width:32px;height:32px;display:none;margin:0 auto 12px}
   footer{margin-top:60px;text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--dim)}
   footer .warn{color:var(--warn)}
-  /* Modale */
   .modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(13,2,33,.92);
     backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:24px}
   .modal.show{display:flex;animation:fadeIn .3s}
@@ -911,7 +927,6 @@ cat > frontend/index.html <<'HTML'
   <footer><span class="warn">⚠</span> Ne scannez que les réseaux dont vous avez l'autorisation explicite.</footer>
 </div>
 
-<!-- Modale -->
 <div class="modal" id="modal">
   <div class="modal-content" style="position:relative">
     <button class="modal-close" onclick="closeModal()">✕</button>
@@ -925,6 +940,20 @@ const API = '';
 
 function closeModal(){ $('modal').classList.remove('show'); }
 $('modal').addEventListener('click', e => { if(e.target === $('modal')) closeModal(); });
+
+// Extrait le détail d'erreur d'une réponse non-OK (FastAPI renvoie {"detail": ...})
+async function extractError(r){
+  try{
+    const text = await r.text();
+    try{
+      const j = JSON.parse(text);
+      if(j.detail) return `HTTP ${r.status} — ${typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)}`;
+    }catch(_){}
+    return `HTTP ${r.status} — ${text.slice(0,200)}`;
+  }catch(e){
+    return `HTTP ${r.status}`;
+  }
+}
 
 async function lancerScan(){
   const target = $('target').value.trim();
@@ -945,7 +974,10 @@ async function lancerScan(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({target, ports, mode})
     });
-    if(!r.ok) throw new Error('HTTP ' + r.status);
+    if(!r.ok){
+      const msg = await extractError(r);
+      throw new Error(msg);
+    }
     const data = await r.json();
     const job_id = data.job_id;
     $('progressBar').style.width = '25%';
@@ -955,6 +987,13 @@ async function lancerScan(){
     const interval = setInterval(async () => {
       try{
         const jr = await fetch(API + '/api/jobs/' + job_id);
+        if(!jr.ok){
+          clearInterval(interval);
+          $('progress').classList.remove('active'); $('radarSpinner').style.display = 'none';
+          $('statusLine').innerHTML = '<span class="err">✗ ' + await extractError(jr) + '</span>';
+          btn.disabled = false;
+          return;
+        }
         const job = await jr.json();
         progress = Math.min(progress + 5, 92);
         $('progressBar').style.width = progress + '%';
@@ -968,13 +1007,13 @@ async function lancerScan(){
         } else if(job.status === 'error'){
           clearInterval(interval);
           $('progress').classList.remove('active'); $('radarSpinner').style.display = 'none';
-          $('statusLine').innerHTML = '<span class="err">✗ Erreur lors du scan.</span>';
+          $('statusLine').innerHTML = '<span class="err">✗ Erreur lors du scan (voir logs worker).</span>';
           btn.disabled = false;
         }
       }catch(e){
         clearInterval(interval);
         $('progress').classList.remove('active'); $('radarSpinner').style.display = 'none';
-        $('statusLine').innerHTML = '<span class="err">✗ Connexion perdue.</span>';
+        $('statusLine').innerHTML = '<span class="err">✗ Connexion perdue: ' + e.message + '</span>';
         btn.disabled = false;
       }
     }, 2000);
@@ -1096,16 +1135,31 @@ ok "Frontend généré."
 log "Construction et démarrage..."
 docker compose up -d --build
 
-log "Attente de l'API..."
-for i in {1..60}; do
+log "Attente de l'API (healthcheck compose)..."
+for i in {1..90}; do
   if curl -s "http://localhost:${APP_PORT}/api/jobs/0" -o /dev/null -w "%{http_code}" 2>/dev/null | grep -qE "200|404"; then
     break
   fi
   sleep 2
 done
 
+# Vérification post-démarrage : packaging + kombu + ping Celery
+log "Vérification des dépendances critiques..."
+if docker compose exec -T api python -c "import packaging, kombu; print('OK', packaging.__version__, kombu.__version__)"; then
+  ok "packaging + kombu OK"
+else
+  fail "packaging/kombu manquants → vérifier backend/requirements.txt et rebuild."
+fi
+
+log "Ping Celery..."
+if docker compose exec -T worker celery -A tasks inspect ping 2>/dev/null | grep -q "pong"; then
+  ok "Worker Celery répond"
+else
+  echo -e "${YEL}[!]${NC} Worker Celery ne répond pas encore — vérifier: docker compose logs worker"
+fi
+
 ok "=============================================="
-ok " IP EXPERT SCANNER — édition complète"
+ok " IP EXPERT SCANNER — édition corrigée"
 ok " Interface : http://localhost:${APP_PORT}"
 ok " API docs  : http://localhost:${APP_PORT}/docs"
 ok "=============================================="
