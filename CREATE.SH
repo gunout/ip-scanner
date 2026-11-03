@@ -11,30 +11,52 @@ log()  { echo -e "${CYAN}[*]${NC} $1"; }
 ok()   { echo -e "${GREEN}[+]${NC} $1"; }
 fail() { echo -e "${RED}[!]${NC} $1"; exit 1; }
 
-# IMPORTANT : exporté, sinon ${APP_PORT} se résout en vide dans compose
+# ------------------------------------------------------------
+# Doit être exporté : sinon ${APP_PORT} se résout en vide dans
+# docker-compose.yml et le port est attribué aléatoirement.
+# ------------------------------------------------------------
 export APP_PORT=9745
 
+# ------------------------------------------------------------
+# Arrêt de l'ancien déploiement, avec nettoyage robuste :
+#  - --remove-orphans  : tue aussi les conteneurs d'un autre projet compose
+#  - docker ps filter  : tue tout conteneur qui publie le port (même orphelin)
+#  - attente active    : le noyau peut garder le socket quelques secondes
+# ------------------------------------------------------------
 log "Arrêt de l'ancien déploiement..."
-docker compose down -v 2>/dev/null || true
-sleep 1
+docker compose down -v --remove-orphans 2>/dev/null || true
+docker ps -q --filter "publish=${APP_PORT}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 
+for i in {1..15}; do
+  if ss -tln 2>/dev/null | grep -qE ":${APP_PORT}\b"; then
+    log "Port ${APP_PORT} encore occupé, attente ($i/15)…"
+    sleep 1
+  else
+    break
+  fi
+done
+
+# ------------------------------------------------------------
+# Prérequis
+# ------------------------------------------------------------
 log "Vérification des prérequis..."
 [[ $EUID -eq 0 ]] || fail "Lancez avec sudo."
 command -v docker &>/dev/null || fail "Docker requis."
 docker compose version &>/dev/null || fail "Docker Compose v2 requis."
 command -v nmap &>/dev/null || { log "Installation nmap..."; apt-get update -qq && apt-get install -y -qq nmap; }
-if ss -tlnp 2>/dev/null | grep -q ":${APP_PORT} "; then
-  fail "Port ${APP_PORT} occupé."
+if ss -tlnp 2>/dev/null | grep -qE ":${APP_PORT}\b"; then
+  fail "Port ${APP_PORT} toujours occupé après nettoyage. Vérifiez: sudo ss -tlnp 'sport = :${APP_PORT}'"
 fi
 ok "Prérequis OK."
 
 mkdir -p backend frontend screenshots
 ok "Dossiers créés."
 
-# ---------- requirements ----------
-# packaging + kombu EXPLICITES : kombu.transport.redis fait
-# `from packaging.version import Version` → sans packaging, Celery
-# plante au premier .delay() (ModuleNotFoundError).
+# ------------------------------------------------------------
+# requirements.txt
+#  - packaging : kombu.transport.redis fait `from packaging.version import Version`
+#  - kombu     : pinné explicitement pour verrouiller la version du transport
+# ------------------------------------------------------------
 cat > backend/requirements.txt <<'EOF'
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
@@ -53,11 +75,16 @@ beautifulsoup4==4.12.3
 playwright==1.48.0
 EOF
 
-# ---------- Dockerfile ----------
-# NOTE : plus de `|| true` sur playwright install-deps → si ça casse,
-# le build échoue visiblement au lieu de produire un conteneur cassé.
+# ------------------------------------------------------------
+# Dockerfile
+#  - base bookworm : Playwright 1.48 connait Debian 12, installe ses
+#    deps sans fallback Ubuntu (ttf-ubuntu-font-family n'existe pas
+#    sur trixie → build qui casse).
+#  - pas de `|| true` sur playwright install-deps : on veut que le
+#    build casse franchement si les deps ne s'installent pas.
+# ------------------------------------------------------------
 cat > backend/Dockerfile <<'EOF'
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap masscan curl \
@@ -76,7 +103,9 @@ EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 EOF
 
-# ---------- database.py ----------
+# ------------------------------------------------------------
+# database.py
+# ------------------------------------------------------------
 cat > backend/database.py <<'EOF'
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -87,7 +116,9 @@ engine = create_engine(DB_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 EOF
 
-# ---------- models.py ----------
+# ------------------------------------------------------------
+# models.py
+# ------------------------------------------------------------
 cat > backend/models.py <<'EOF'
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index, Text
 from sqlalchemy.orm import declarative_base, relationship
@@ -139,7 +170,9 @@ class HostResult(Base):
 Index("ix_host_port", HostResult.ip, HostResult.port)
 EOF
 
-# ---------- scanner.py (inchangé) ----------
+# ------------------------------------------------------------
+# scanner.py (inchangé fonctionnellement)
+# ------------------------------------------------------------
 cat > backend/scanner.py <<'EOF'
 import subprocess, json, socket, nmap, re
 import requests
@@ -480,7 +513,9 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
     return results
 EOF
 
-# ---------- tasks.py ----------
+# ------------------------------------------------------------
+# tasks.py
+# ------------------------------------------------------------
 cat > backend/tasks.py <<'EOF'
 from celery import Celery
 from scanner import scan_target, detect_target_type
@@ -520,11 +555,13 @@ def run_scan(job_id):
         db.commit(); db.close()
 EOF
 
-# ---------- main.py ----------
-# Différences vs. original :
-#  - run_scan.delay() entouré de try/except → 503 avec message lisible
-#    au lieu d'un 500 vide (21 bytes "Internal Server Error")
-#  - traceback.print_exc() pour garantir la stack dans les logs
+# ------------------------------------------------------------
+# main.py
+#  Différence vs. original : run_scan.delay() entouré d'un try/except
+#  → renvoie un 503 avec le vrai message au lieu d'un 500 vide
+#  (21 octets "Internal Server Error"), et traceback.print_exc()
+#  garantit la stack dans les logs.
+# ------------------------------------------------------------
 cat > backend/main.py <<'EOF'
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -607,12 +644,13 @@ if os.path.isdir("static"):
     app.mount("/", StaticFiles(directory="static", html=True), name="static")
 EOF
 
-# ---------- docker-compose.yml ----------
-# Différences vs. original :
-#  - redis healthcheck (le "Started" ne veut pas dire "ready")
-#  - api healthcheck + worker dépend de api healthy → évite la race
-#    "relation scan_jobs does not exist"
-#  - worker lance create_all en préambule, ceinture + bretelles
+# ------------------------------------------------------------
+# docker-compose.yml
+#  - healthcheck Redis (le "Started" ne veut pas dire "prêt")
+#  - healthcheck API + worker attend api:healthy (évite la race
+#    "relation scan_jobs does not exist")
+#  - worker lance create_all avant Celery (ceinture + bretelles)
+# ------------------------------------------------------------
 cat > docker-compose.yml <<EOF
 services:
   db:
@@ -654,8 +692,6 @@ services:
       start_period: 20s
   worker:
     build: ./backend
-    # create_all en préambule : si l'API n'a pas encore fini de créer
-    # les tables, le worker les crée lui-même (idempotent).
     command: >
       sh -c "python -c 'from database import engine; from models import Base; Base.metadata.create_all(bind=engine)' &&
              celery -A tasks worker --loglevel=info --concurrency=2"
@@ -674,7 +710,12 @@ volumes:
   pgdata:
 EOF
 
-# ---------- FRONTEND ----------
+# ------------------------------------------------------------
+# FRONTEND
+#  Différence vs. original : extractError() lit le "detail" renvoyé
+#  par FastAPI → l'utilisateur voit "HTTP 503 — File d'attente
+#  indisponible: OperationalError: ..." au lieu de "HTTP 500".
+# ------------------------------------------------------------
 cat > frontend/index.html <<'HTML'
 <!DOCTYPE html>
 <html lang="fr">
@@ -737,7 +778,7 @@ cat > frontend/index.html <<'HTML'
   .progress-bar{height:100%;width:0;
     background:linear-gradient(90deg,var(--pink3),var(--pink),var(--pink2));
     transition:width .3s;box-shadow:0 0 16px var(--pink)}
-  .status-line{font-family:var(--mono);font-size:12px;letter-spacing:1px;color:var(--dim);margin-top:14px;min-height:18px}
+  .status-line{font-family:var(--mono);font-size:12px;letter-spacing:1px;color:var(--dim);margin-top:14px;min-height:18px;word-break:break-word}
   .status-line .ok{color:var(--ok)} .status-line .err{color:var(--pink2)}
   .hint{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:10px;letter-spacing:1px}
   .hint code{color:var(--pink3);background:rgba(255,45,149,.08);padding:2px 6px;border-radius:4px}
@@ -941,7 +982,6 @@ const API = '';
 function closeModal(){ $('modal').classList.remove('show'); }
 $('modal').addEventListener('click', e => { if(e.target === $('modal')) closeModal(); });
 
-// Extrait le détail d'erreur d'une réponse non-OK (FastAPI renvoie {"detail": ...})
 async function extractError(r){
   try{
     const text = await r.text();
@@ -1132,10 +1172,26 @@ HTML
 
 ok "Frontend généré."
 
-log "Construction et démarrage..."
-docker compose up -d --build
+# ------------------------------------------------------------
+# Build + démarrage
+#  On sépare build et up : avec `--build` sur `up`, si un service
+#  échoue au build, compose peut quand même démarrer les autres
+#  à partir d'images obsolètes (worker zombie, etc.). En séparant,
+#  un build raté arrête tout avant le up.
+#  --no-cache : force pip + playwright à re-tourner. Sans ça,
+#  changer la base (trixie → bookworm) peut laisser la couche
+#  pip install en cache et masquer le problème.
+# ------------------------------------------------------------
+log "Construction des images (peut prendre 5-10 min au premier run)..."
+docker compose build --no-cache api worker
 
-log "Attente de l'API (healthcheck compose)..."
+log "Démarrage des services..."
+docker compose up -d
+
+# ------------------------------------------------------------
+# Attente de l'API
+# ------------------------------------------------------------
+log "Attente de l'API..."
 for i in {1..90}; do
   if curl -s "http://localhost:${APP_PORT}/api/jobs/0" -o /dev/null -w "%{http_code}" 2>/dev/null | grep -qE "200|404"; then
     break
@@ -1143,19 +1199,29 @@ for i in {1..90}; do
   sleep 2
 done
 
-# Vérification post-démarrage : packaging + kombu + ping Celery
+# ------------------------------------------------------------
+# Vérifications post-démarrage
+# ------------------------------------------------------------
 log "Vérification des dépendances critiques..."
-if docker compose exec -T api python -c "import packaging, kombu; print('OK', packaging.__version__, kombu.__version__)"; then
+if docker compose exec -T api python -c "import packaging, kombu; print('OK packaging=' + packaging.__version__ + ' kombu=' + kombu.__version__)" 2>/dev/null; then
   ok "packaging + kombu OK"
 else
   fail "packaging/kombu manquants → vérifier backend/requirements.txt et rebuild."
 fi
 
-log "Ping Celery..."
-if docker compose exec -T worker celery -A tasks inspect ping 2>/dev/null | grep -q "pong"; then
-  ok "Worker Celery répond"
-else
-  echo -e "${YEL}[!]${NC} Worker Celery ne répond pas encore — vérifier: docker compose logs worker"
+log "Ping Celery (peut prendre 2-3s)..."
+CELERY_OK=0
+for i in {1..10}; do
+  if docker compose exec -T worker celery -A tasks inspect ping 2>/dev/null | grep -q "pong"; then
+    ok "Worker Celery répond"
+    CELERY_OK=1
+    break
+  fi
+  sleep 1
+done
+if [[ $CELERY_OK -eq 0 ]]; then
+  echo -e "${YEL}[!]${NC} Worker Celery ne répond pas — l'API fonctionnera mais les scans resteront 'pending'."
+  echo -e "${YEL}[!]${NC} Voir: docker compose logs worker --tail=40"
 fi
 
 ok "=============================================="
