@@ -18,10 +18,10 @@ fail() { echo -e "${RED}[!]${NC} $1"; exit 1; }
 export APP_PORT=9745
 
 # ------------------------------------------------------------
-# Arrêt de l'ancien déploiement, avec nettoyage robuste :
-#  - --remove-orphans  : tue aussi les conteneurs d'un autre projet compose
-#  - docker ps filter  : tue tout conteneur qui publie le port (même orphelin)
-#  - attente active    : le noyau peut garder le socket quelques secondes
+# Arrêt + nettoyage robuste :
+#  - --remove-orphans  : tue aussi les conteneurs d'un autre projet
+#  - docker ps filter  : tue tout conteneur qui publie le port
+#  - attente active    : le noyau peut garder le socket quelques sec
 # ------------------------------------------------------------
 log "Arrêt de l'ancien déploiement..."
 docker compose down -v --remove-orphans 2>/dev/null || true
@@ -55,7 +55,7 @@ ok "Dossiers créés."
 # ------------------------------------------------------------
 # requirements.txt
 #  - packaging : kombu.transport.redis fait `from packaging.version import Version`
-#  - kombu     : pinné explicitement pour verrouiller la version du transport
+#  - kombu     : pinné pour verrouiller la version du transport Redis
 # ------------------------------------------------------------
 cat > backend/requirements.txt <<'EOF'
 fastapi==0.115.0
@@ -77,11 +77,11 @@ EOF
 
 # ------------------------------------------------------------
 # Dockerfile
-#  - base bookworm : Playwright 1.48 connait Debian 12, installe ses
-#    deps sans fallback Ubuntu (ttf-ubuntu-font-family n'existe pas
-#    sur trixie → build qui casse).
-#  - pas de `|| true` sur playwright install-deps : on veut que le
-#    build casse franchement si les deps ne s'installent pas.
+#  - base bookworm : Playwright 1.48 connaît Debian 12, installe ses deps
+#    sans fallback Ubuntu (ttf-ubuntu-font-family n'existe pas sur trixie)
+#  - curl inclus pour le healthcheck du compose
+#  - pas de `|| true` : on veut que le build casse franchement si
+#    playwright install-deps échoue
 # ------------------------------------------------------------
 cat > backend/Dockerfile <<'EOF'
 FROM python:3.12-slim-bookworm
@@ -559,8 +559,6 @@ EOF
 # main.py
 #  Différence vs. original : run_scan.delay() entouré d'un try/except
 #  → renvoie un 503 avec le vrai message au lieu d'un 500 vide
-#  (21 octets "Internal Server Error"), et traceback.print_exc()
-#  garantit la stack dans les logs.
 # ------------------------------------------------------------
 cat > backend/main.py <<'EOF'
 from fastapi import FastAPI, HTTPException
@@ -646,9 +644,11 @@ EOF
 
 # ------------------------------------------------------------
 # docker-compose.yml
-#  - healthcheck Redis (le "Started" ne veut pas dire "prêt")
-#  - healthcheck API + worker attend api:healthy (évite la race
-#    "relation scan_jobs does not exist")
+#  - healthcheck Redis : "Started" ≠ "ready"
+#  - healthcheck API   : /openapi.json toujours 200 → ne casse pas
+#                        le healthcheck sur un 404 métier comme /api/jobs/0
+#  - worker dépend de api:healthy (évite la race "relation scan_jobs
+#    does not exist")
 #  - worker lance create_all avant Celery (ceinture + bretelles)
 # ------------------------------------------------------------
 cat > docker-compose.yml <<EOF
@@ -685,9 +685,9 @@ services:
       DATABASE_URL: postgresql://scanner:scanner@db:5432/scanner
       REDIS_URL: redis://redis:6379/0
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/jobs/0')"]
+      test: ["CMD-SHELL", "curl -sf --max-time 3 -o /dev/null http://localhost:8000/openapi.json || exit 1"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 30
       start_period: 20s
   worker:
@@ -712,9 +712,9 @@ EOF
 
 # ------------------------------------------------------------
 # FRONTEND
-#  Différence vs. original : extractError() lit le "detail" renvoyé
-#  par FastAPI → l'utilisateur voit "HTTP 503 — File d'attente
-#  indisponible: OperationalError: ..." au lieu de "HTTP 500".
+#  extractError() lit le "detail" renvoyé par FastAPI → l'utilisateur
+#  voit "HTTP 503 — File d'attente indisponible: ..." au lieu de
+#  "HTTP 500".
 # ------------------------------------------------------------
 cat > frontend/index.html <<'HTML'
 <!DOCTYPE html>
@@ -1174,16 +1174,14 @@ ok "Frontend généré."
 
 # ------------------------------------------------------------
 # Build + démarrage
-#  On sépare build et up : avec `--build` sur `up`, si un service
-#  échoue au build, compose peut quand même démarrer les autres
-#  à partir d'images obsolètes (worker zombie, etc.). En séparant,
-#  un build raté arrête tout avant le up.
-#  --no-cache : force pip + playwright à re-tourner. Sans ça,
-#  changer la base (trixie → bookworm) peut laisser la couche
-#  pip install en cache et masquer le problème.
+#  - `docker compose build` (sans --no-cache) : si tu changes le
+#    Dockerfile et veux forcer une reconstruction complète, lance
+#    `docker compose build --no-cache api worker` à la main.
+#  - `build` puis `up -d` séparés : un build raté stoppe tout avant
+#    le up, évite les conteneurs zombie d'une image obsolète.
 # ------------------------------------------------------------
-log "Construction des images (peut prendre 5-10 min au premier run)..."
-docker compose build --no-cache api worker
+log "Construction des images..."
+docker compose build api worker
 
 log "Démarrage des services..."
 docker compose up -d
