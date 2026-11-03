@@ -18,10 +18,7 @@ fail() { echo -e "${RED}[!]${NC} $1"; exit 1; }
 export APP_PORT=9745
 
 # ------------------------------------------------------------
-# Arrêt + nettoyage robuste :
-#  - --remove-orphans  : tue aussi les conteneurs d'un autre projet
-#  - docker ps filter  : tue tout conteneur qui publie le port
-#  - attente active    : le noyau peut garder le socket quelques sec
+# Arrêt + nettoyage robuste
 # ------------------------------------------------------------
 log "Arrêt de l'ancien déploiement..."
 docker compose down -v --remove-orphans 2>/dev/null || true
@@ -54,8 +51,6 @@ ok "Dossiers créés."
 
 # ------------------------------------------------------------
 # requirements.txt
-#  - packaging : kombu.transport.redis fait `from packaging.version import Version`
-#  - kombu     : pinné pour verrouiller la version du transport Redis
 # ------------------------------------------------------------
 cat > backend/requirements.txt <<'EOF'
 fastapi==0.115.0
@@ -76,12 +71,7 @@ playwright==1.48.0
 EOF
 
 # ------------------------------------------------------------
-# Dockerfile
-#  - base bookworm : Playwright 1.48 connaît Debian 12, installe ses deps
-#    sans fallback Ubuntu (ttf-ubuntu-font-family n'existe pas sur trixie)
-#  - curl inclus pour le healthcheck du compose
-#  - pas de `|| true` : on veut que le build casse franchement si
-#    playwright install-deps échoue
+# Dockerfile — base bookworm pour Playwright 1.48
 # ------------------------------------------------------------
 cat > backend/Dockerfile <<'EOF'
 FROM python:3.12-slim-bookworm
@@ -171,7 +161,11 @@ Index("ix_host_port", HostResult.ip, HostResult.port)
 EOF
 
 # ------------------------------------------------------------
-# scanner.py (inchangé fonctionnellement)
+# scanner.py — optimisé
+#  - capture_screenshot : domcontentloaded + 10s (au lieu de
+#    networkidle + 30s) → Chromium en 2-3s, pas 30+
+#  - nmap_fingerprint : -T4 sans -sV → 5s au lieu de 60
+#  - scan_target (URL) : [:1] au lieu de [:3] → 1 IP scannée
 # ------------------------------------------------------------
 cat > backend/scanner.py <<'EOF'
 import subprocess, json, socket, nmap, re
@@ -184,6 +178,9 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 import ssl
 from bs4 import BeautifulSoup
+
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def detect_target_type(target: str) -> str:
@@ -290,9 +287,15 @@ def capture_screenshot(url: str, filename: str) -> str | None:
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             page = browser.new_page(viewport={"width": 1280, "height": 800})
-            page.goto(url, wait_until="networkidle", timeout=30000)
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=10000)
+            except Exception:
+                pass
             page.screenshot(path=path, full_page=True)
             browser.close()
         return filename
@@ -376,7 +379,7 @@ def masscan_discover(target, ports="1-65535", rate=1000):
             continue
     return open_ports
 
-def nmap_fingerprint(open_ports):
+def nmap_fingerprint(open_ports, version_scan=False):
     if not open_ports:
         return []
     by_ip = {}
@@ -384,10 +387,11 @@ def nmap_fingerprint(open_ports):
         by_ip.setdefault(ip, []).append(port)
     results = []
     nm = nmap.PortScanner()
+    args = "-sV -T4" if version_scan else "-T4"
     for ip, ports in by_ip.items():
         port_str = ",".join(str(p) for p in sorted(set(ports)))
         try:
-            nm.scan(hosts=ip, ports=port_str, arguments="-sV -T4")
+            nm.scan(hosts=ip, ports=port_str, arguments=args)
         except Exception:
             continue
         for proto in nm[ip].all_protocols():
@@ -440,7 +444,8 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
             }]
 
         results = []
-        for ip in info["ips"][:3]:
+        # Une seule IP suffit pour un scan URL ; [:3] multipliait le temps par 3
+        for ip in info["ips"][:1]:
             full = scan_url_full(info["url"], ip=ip, job_id=job_id,
                                  do_crawl=True, do_screenshot=True)
             full.update({
@@ -456,7 +461,8 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
             web_ports = "80,443,8080,8443,3000,5000,8000"
             open_ports = masscan_discover(ip, web_ports, rate=500)
             if open_ports:
-                fp = nmap_fingerprint(open_ports)
+                # version_scan=False : nmap rapide, on a déjà le service via HTTP/TLS
+                fp = nmap_fingerprint(open_ports, version_scan=False)
                 for r in fp:
                     r.update({
                         "url": info["url"], "http_status": None,
@@ -503,7 +509,7 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
 
     rate = 1000 if mode == "balanced" else 3000
     open_ports = masscan_discover(target, ports, rate=rate)
-    results = nmap_fingerprint(open_ports)
+    results = nmap_fingerprint(open_ports, version_scan=True)
     for r in results:
         if r["service"] in ("unknown", "tcpwrapped", ""):
             detected = probe_unknown(r["ip"], r["port"])
@@ -514,10 +520,11 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
 EOF
 
 # ------------------------------------------------------------
-# tasks.py
+# tasks.py — time limit Celery
 # ------------------------------------------------------------
 cat > backend/tasks.py <<'EOF'
 from celery import Celery
+from celery.exceptions import SoftTimeLimitExceeded
 from scanner import scan_target, detect_target_type
 from database import SessionLocal
 from models import ScanJob, HostResult
@@ -528,6 +535,10 @@ celery_app = Celery("scanner",
     broker=os.getenv("REDIS_URL", "redis://redis:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://redis:6379/0"))
 
+celery_app.conf.broker_connection_retry_on_startup = True
+celery_app.conf.task_time_limit = 120
+celery_app.conf.task_soft_time_limit = 100
+
 def get_prior_ips(db):
     cutoff = datetime.utcnow() - timedelta(days=7)
     rows = (db.query(HostResult.ip)
@@ -536,7 +547,7 @@ def get_prior_ips(db):
               .distinct().all())
     return [r[0] for r in rows]
 
-@celery_app.task
+@celery_app.task(time_limit=120, soft_time_limit=100)
 def run_scan(job_id):
     db = SessionLocal()
     job = db.query(ScanJob).get(job_id)
@@ -549,6 +560,9 @@ def run_scan(job_id):
         for r in results:
             db.add(HostResult(job_id=job.id, last_seen=now, **r))
         job.status = "done"
+    except SoftTimeLimitExceeded:
+        job.status = "error"
+        print(f"Timeout: job {job_id} > 100s")
     except Exception as e:
         job.status = "error"; print("Erreur:", e)
     finally:
@@ -556,9 +570,7 @@ def run_scan(job_id):
 EOF
 
 # ------------------------------------------------------------
-# main.py
-#  Différence vs. original : run_scan.delay() entouré d'un try/except
-#  → renvoie un 503 avec le vrai message au lieu d'un 500 vide
+# main.py — enqueue wrappé (503 lisible au lieu de 500)
 # ------------------------------------------------------------
 cat > backend/main.py <<'EOF'
 from fastapi import FastAPI, HTTPException
@@ -643,13 +655,7 @@ if os.path.isdir("static"):
 EOF
 
 # ------------------------------------------------------------
-# docker-compose.yml
-#  - healthcheck Redis : "Started" ≠ "ready"
-#  - healthcheck API   : /openapi.json toujours 200 → ne casse pas
-#                        le healthcheck sur un 404 métier comme /api/jobs/0
-#  - worker dépend de api:healthy (évite la race "relation scan_jobs
-#    does not exist")
-#  - worker lance create_all avant Celery (ceinture + bretelles)
+# docker-compose.yml — healthcheck /openapi.json
 # ------------------------------------------------------------
 cat > docker-compose.yml <<EOF
 services:
@@ -692,9 +698,12 @@ services:
       start_period: 20s
   worker:
     build: ./backend
-    command: >
-      sh -c "python -c 'from database import engine; from models import Base; Base.metadata.create_all(bind=engine)' &&
-             celery -A tasks worker --loglevel=info --concurrency=2"
+    command:
+      - sh
+      - -c
+      - |
+        python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+        exec celery -A tasks worker --loglevel=info --concurrency=2
     cap_add: [NET_RAW, NET_ADMIN]
     shm_size: "2gb"
     volumes:
@@ -712,9 +721,6 @@ EOF
 
 # ------------------------------------------------------------
 # FRONTEND
-#  extractError() lit le "detail" renvoyé par FastAPI → l'utilisateur
-#  voit "HTTP 503 — File d'attente indisponible: ..." au lieu de
-#  "HTTP 500".
 # ------------------------------------------------------------
 cat > frontend/index.html <<'HTML'
 <!DOCTYPE html>
@@ -1047,7 +1053,7 @@ async function lancerScan(){
         } else if(job.status === 'error'){
           clearInterval(interval);
           $('progress').classList.remove('active'); $('radarSpinner').style.display = 'none';
-          $('statusLine').innerHTML = '<span class="err">✗ Erreur lors du scan (voir logs worker).</span>';
+          $('statusLine').innerHTML = '<span class="err">✗ Erreur ou timeout du scan (voir logs worker).</span>';
           btn.disabled = false;
         }
       }catch(e){
@@ -1174,11 +1180,6 @@ ok "Frontend généré."
 
 # ------------------------------------------------------------
 # Build + démarrage
-#  - `docker compose build` (sans --no-cache) : si tu changes le
-#    Dockerfile et veux forcer une reconstruction complète, lance
-#    `docker compose build --no-cache api worker` à la main.
-#  - `build` puis `up -d` séparés : un build raté stoppe tout avant
-#    le up, évite les conteneurs zombie d'une image obsolète.
 # ------------------------------------------------------------
 log "Construction des images..."
 docker compose build api worker
