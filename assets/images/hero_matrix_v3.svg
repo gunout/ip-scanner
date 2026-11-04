@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" font-family="'Roboto Mono','Courier New',monospace">
+
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d0221"/>
+      <stop offset="50%" stop-color="#1a0838"/>
+      <stop offset="100%" stop-color="#0d0221"/>
+    </linearGradient>
+
+    <radialGradient id="halo1" cx="25%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ff2d95" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ff2d95" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="halo2" cx="85%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF2D95" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#FF2D95" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <pattern id="gridPat" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="rgba(255,45,149,0.06)" stroke-width="1"/>
+    </pattern>
+
+    <filter id="glowPink" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glowPinkStrong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glowCyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- ============ BACKGROUND ============ -->
+  <rect width="1200" height="520" fill="url(#bgGrad)"/>
+  <rect width="1200" height="520" fill="url(#gridPat)"/>
+  <rect width="1200" height="520" fill="url(#halo1)"/>
+  <rect width="1200" height="520" fill="url(#halo2)"/>
+
+  <!-- Outer border (double) -->
+  <rect x="2" y="2" width="1196" height="516" rx="18" fill="none" stroke="#FF2D95" stroke-width="2" opacity="0.55"/>
+  <rect x="10" y="10" width="1180" height="500" rx="12" fill="none" stroke="#FF2D95" stroke-width="1" opacity="0.15"/>
+
+  <!-- ============ LEFT COLUMN ============ -->
+
+  <!-- Version badge -->
+  <g>
+    <rect x="60" y="55" width="92" height="28" rx="14" fill="rgba(255,45,149,0.12)" stroke="#FF2D95" stroke-width="1"/>
+    <circle cx="76" cy="69" r="3" fill="#FF2D95">
+      <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <text x="88" y="73" font-size="11" fill="#FF66B3" letter-spacing="2" font-weight="700">v3.0.0</text>
+  </g>
+
+  <!-- Status badge -->
+  <g>
+    <circle cx="600" cy="69" r="4" fill="#00FF9D" filter="url(#glowGreen)">
+      <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <text x="614" y="73" font-size="10" fill="#00FF9D" letter-spacing="2" font-weight="700">SYSTEM ONLINE</text>
+  </g>
+
+  <!-- Big title -->
+  <text x="58" y="152" font-size="70" font-weight="900" fill="#FF2D95" letter-spacing="-1" filter="url(#glowPinkStrong)">IP EXPERT</text>
+
+  <!-- Scanner -->
+  <text x="58" y="210" font-size="44" font-weight="700" fill="#00F0FF" letter-spacing="5" filter="url(#glowCyan)">// SCANNER</text>
+
+  <!-- v3 tag -->
+  <g>
+    <rect x="432" y="182" width="54" height="32" rx="6" fill="rgba(255,45,149,0.2)" stroke="#FF2D95" stroke-width="1.5"/>
+    <text x="459" y="204" text-anchor="middle" font-size="18" fill="#FF2D95" font-weight="800">v3</text>
+  </g>
+
+  <!-- Subtitle -->
+  <text x="60" y="248" font-size="15" fill="#8A6BA8" letter-spacing="1.5">Full-Stack Network &amp; Web Recon Scanner</text>
+
+  <!-- Feature pills -->
+  <g>
+    <rect x="60" y="288" width="88" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="78" cy="303" r="3" fill="#FF2D95"/>
+    <text x="90" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">URL</text>
+
+    <rect x="158" y="288" width="82" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="176" cy="303" r="3" fill="#FF2D95"/>
+    <text x="188" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">TLS</text>
+
+    <rect x="250" y="288" width="82" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="268" cy="303" r="3" fill="#FF2D95"/>
+    <text x="280" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">DNS</text>
+
+    <rect x="342" y="288" width="100" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="360" cy="303" r="3" fill="#FF2D95"/>
+    <text x="372" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">WHOIS</text>
+
+    <rect x="452" y="288" width="82" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="470" cy="303" r="3" fill="#FF2D95"/>
+    <text x="482" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">WAF</text>
+
+    <rect x="544" y="288" width="96" height="30" rx="15" fill="rgba(255,45,149,0.1)" stroke="rgba(255,45,149,0.5)" stroke-width="1"/>
+    <circle cx="562" cy="303" r="3" fill="#FF2D95"/>
+    <text x="574" y="307" font-size="11" fill="#FF66B3" font-weight="700" letter-spacing="1">OSINT</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="60" y1="372" x2="700" y2="372" stroke="#FF2D95" stroke-width="1" opacity="0.25"/>
+
+  <!-- Stats row -->
+  <g font-size="13" fill="#8A6BA8" letter-spacing="1">
+    <text x="60" y="408">
+      <tspan fill="#FF2D95" font-weight="800" font-size="18">18</tspan>
+      <tspan dx="4">COLLECTORS</tspan>
+      <tspan dx="16" fill="#3A1A5C">|</tspan>
+      <tspan dx="16" fill="#00F0FF" font-weight="800" font-size="18">60+</tspan>
+      <tspan dx="4">FIELDS</tspan>
+      <tspan dx="16" fill="#3A1A5C">|</tspan>
+      <tspan dx="16" fill="#00FF9D" font-weight="800" font-size="18">5</tspan>
+      <tspan dx="4">MODES</tspan>
+      <tspan dx="16" fill="#3A1A5C">|</tspan>
+      <tspan dx="16" fill="#FFB800" font-weight="800" font-size="18">30+</tspan>
+      <tspan dx="4">TECHS</tspan>
+    </text>
+  </g>
+
+  <!-- ============ RIGHT PANEL ============ -->
+
+  <!-- Panel background -->
+  <rect x="760" y="55" width="380" height="380" rx="16" fill="rgba(13,2,33,0.65)" stroke="#FF2D95" stroke-width="1.5" filter="url(#glowPink)"/>
+
+  <!-- Panel header corners -->
+  <path d="M 760 71 L 760 55 L 776 55" fill="none" stroke="#FF2D95" stroke-width="2" opacity="0.7"/>
+  <path d="M 1140 71 L 1140 55 L 1124 55" fill="none" stroke="#FF2D95" stroke-width="2" opacity="0.7"/>
+
+  <text x="782" y="80" font-size="10" fill="#FF2D95" letter-spacing="3" font-weight="700">▸ LIVE SCAN</text>
+  <circle cx="1116" cy="76" r="3" fill="#00FF9D">
+    <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <text x="1124" y="80" text-anchor="end" font-size="10" fill="#00FF9D" font-weight="700" letter-spacing="2">READY</text>
+
+  <!-- Radar -->
+  <g transform="translate(950, 200)">
+    <!-- Outer glow ring -->
+    <circle r="130" fill="none" stroke="rgba(255,45,149,0.08)" stroke-width="8"/>
+
+    <!-- Rings -->
+    <circle r="120" fill="none" stroke="rgba(255,45,149,0.35)" stroke-width="1"/>
+    <circle r="90" fill="none" stroke="rgba(255,45,149,0.25)" stroke-width="1"/>
+    <circle r="60" fill="none" stroke="rgba(255,45,149,0.2)" stroke-width="1"/>
+    <circle r="30" fill="none" stroke="rgba(255,45,149,0.15)" stroke-width="1"/>
+
+    <!-- Crosshairs -->
+    <line x1="-120" y1="0" x2="120" y2="0" stroke="rgba(255,45,149,0.15)" stroke-width="1"/>
+    <line x1="0" y1="-120" x2="0" y2="120" stroke="rgba(255,45,149,0.15)" stroke-width="1"/>
+
+    <!-- Diagonal ticks -->
+    <line x1="-85" y1="-85" x2="-75" y2="-75" stroke="rgba(255,45,149,0.3)" stroke-width="1"/>
+    <line x1="85" y1="-85" x2="75" y2="-75" stroke="rgba(255,45,149,0.3)" stroke-width="1"/>
+    <line x1="-85" y1="85" x2="-75" y2="75" stroke="rgba(255,45,149,0.3)" stroke-width="1"/>
+    <line x1="85" y1="85" x2="75" y2="75" stroke="rgba(255,45,149,0.3)" stroke-width="1"/>
+
+    <!-- Sweep (comet trail) -->
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s" repeatCount="indefinite"/>
+      <path d="M 0,0 L 0,-120 A 120,120 0 0,1 68,-98 Z" fill="url(#sweepGrad)" opacity="0.7"/>
+      <line x1="0" y1="0" x2="0" y2="-120" stroke="#FF2D95" stroke-width="2" filter="url(#glowPink)"/>
+    </g>
+
+    <!-- Blips -->
+    <circle cx="85" cy="-45" r="4" fill="#FF2D95" filter="url(#glowPink)">
+      <animate attributeName="opacity" values="0;1;1;0" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="-65" cy="75" r="3.5" fill="#00F0FF" filter="url(#glowCyan)">
+      <animate attributeName="opacity" values="0;0;1;1;0" dur="4s" begin="1.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="45" cy="95" r="3" fill="#00FF9D">
+      <animate attributeName="opacity" values="0;0;0;1;1" dur="4s" begin="2.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="-95" cy="-30" r="3" fill="#FFB800">
+      <animate attributeName="opacity" values="1;1;0;0;1" dur="4s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Center -->
+    <circle r="7" fill="#FF2D95" filter="url(#glowPink)" opacity="0.9"/>
+    <circle r="2.5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Terminal box -->
+  <rect x="782" y="350" width="336" height="65" rx="8" fill="rgba(13,2,33,0.9)" stroke="rgba(255,45,149,0.35)" stroke-width="1"/>
+  <rect x="782" y="350" width="336" height="14" rx="8" fill="rgba(255,45,149,0.08)"/>
+  <circle cx="792" cy="357" r="2.5" fill="#FF2D95"/>
+  <circle cx="802" cy="357" r="2.5" fill="#FFB800"/>
+  <circle cx="812" cy="357" r="2.5" fill="#00FF9D"/>
+  <text x="1108" y="360" text-anchor="end" font-size="8" fill="#8A6BA8" letter-spacing="1">worker@recon</text>
+
+  <!-- Terminal crossfade lines -->
+  <text x="794" y="387" font-size="11" fill="#FF66B3" font-weight="600" letter-spacing="0.5">
+    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.03;0.32;0.35;1" dur="9s" repeatCount="indefinite"/>
+    ► masscan -p1-1000 · discovering...
+  </text>
+  <text x="794" y="387" font-size="11" fill="#FF66B3" font-weight="600" letter-spacing="0.5" opacity="0">
+    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.03;0.32;0.35;1" dur="9s" begin="3s" repeatCount="indefinite"/>
+    ► nmap -sV · fingerprinting ports...
+  </text>
+  <text x="794" y="387" font-size="11" fill="#00FF9D" font-weight="600" letter-spacing="0.5" opacity="0">
+    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.03;0.32;0.35;1" dur="9s" begin="6s" repeatCount="indefinite"/>
+    ► recon complete · 60+ fields ✓
+  </text>
+
+  <!-- Terminal footer -->
+  <text x="794" y="406" font-size="9" fill="#8A6BA8" letter-spacing="1">worker · celery · concurrency=2</text>
+
+  <!-- ============ FOOTER ============ -->
+  <line x1="60" y1="450" x2="1140" y2="450" stroke="#FF2D95" stroke-width="1" opacity="0.2"/>
+  <text x="600" y="478" text-anchor="middle" font-size="11" fill="#8A6BA8" letter-spacing="3">
+    <tspan fill="#FF2D95">▸</tspan>
+    <tspan dx="8">github.com/gunout/ip-scanner</tspan>
+    <tspan dx="12" fill="#3A1A5C">·</tspan>
+    <tspan dx="12">MIT License</tspan>
+    <tspan dx="12" fill="#3A1A5C">·</tspan>
+    <tspan dx="12">2026</tspan>
+    <tspan dx="8" fill="#FF2D95">◂</tspan>
+  </text>
+</svg>
