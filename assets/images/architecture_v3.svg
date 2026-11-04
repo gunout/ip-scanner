@@ -1,0 +1,244 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="'Roboto Mono',ui-monospace,monospace">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,45,149,0.06)" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="bgGlow" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="#ff2d95" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ff2d95" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="boxPink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a0a45"/>
+      <stop offset="100%" stop-color="#140628"/>
+    </linearGradient>
+    <linearGradient id="boxPink2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2e0420"/>
+      <stop offset="100%" stop-color="#160210"/>
+    </linearGradient>
+    <linearGradient id="boxGreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a2a1a"/>
+      <stop offset="100%" stop-color="#041608"/>
+    </linearGradient>
+    <linearGradient id="boxYellow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a1f05"/>
+      <stop offset="100%" stop-color="#150f02"/>
+    </linearGradient>
+    <linearGradient id="boxCyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#052a2a"/>
+      <stop offset="100%" stop-color="#021414"/>
+    </linearGradient>
+    <filter id="glowPink" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowPink2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowYellow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowCyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrPink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#FF2D95"/>
+    </marker>
+    <marker id="arrPink2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#FF006E"/>
+    </marker>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#00FF9D"/>
+    </marker>
+    <marker id="arrYellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#FFB800"/>
+    </marker>
+    <marker id="arrCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#00F0FF"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#0d0221"/>
+  <rect width="1400" height="900" fill="url(#bgGlow)"/>
+  <rect width="1400" height="900" fill="url(#grid)"/>
+
+  <!-- Title -->
+  <text x="700" y="44" text-anchor="middle" font-size="24" font-weight="700" fill="#FF2D95" filter="url(#glowPink)" letter-spacing="6">IP EXPERT SCANNER v3</text>
+  <text x="700" y="70" text-anchor="middle" font-size="12" fill="#8A6BA8" letter-spacing="5">SYSTEM ARCHITECTURE</text>
+  <line x1="400" y1="82" x2="1000" y2="82" stroke="#FF2D95" stroke-width="2" opacity="0.5"/>
+  <line x1="300" y1="82" x2="1100" y2="82" stroke="#FF2D95" stroke-width="1" opacity="0.25"/>
+
+  <!-- ===================== FRONTEND ===================== -->
+  <g>
+    <rect x="500" y="110" width="400" height="80" rx="10" fill="url(#boxPink)" stroke="#FF2D95" stroke-width="2" filter="url(#glowPink)"/>
+    <circle cx="528" cy="150" r="10" fill="none" stroke="#FF2D95" stroke-width="2"/>
+    <circle cx="528" cy="150" r="3" fill="#FF2D95"/>
+    <text x="712" y="144" text-anchor="middle" font-size="15" font-weight="700" fill="#FF2D95" letter-spacing="2">FRONTEND</text>
+    <text x="712" y="166" text-anchor="middle" font-size="11" fill="#FF66B3">Neon UI · index.html</text>
+    <text x="712" y="182" text-anchor="middle" font-size="10" fill="#8A6BA8">browser :9745 · polling 2s</text>
+  </g>
+
+  <!-- ===================== FastAPI ===================== -->
+  <g>
+    <rect x="500" y="240" width="400" height="110" rx="10" fill="url(#boxPink)" stroke="#FF2D95" stroke-width="2" filter="url(#glowPink)"/>
+    <circle cx="528" cy="275" r="10" fill="none" stroke="#FF2D95" stroke-width="2"/>
+    <path d="M 524 271 L 524 279 M 524 275 L 531 275" stroke="#FF2D95" stroke-width="2"/>
+    <text x="712" y="272" text-anchor="middle" font-size="15" font-weight="700" fill="#FF2D95" letter-spacing="2">FastAPI · :8000</text>
+    <text x="712" y="295" text-anchor="middle" font-size="11" fill="#FF66B3">POST /api/scan · GET /api/jobs/{id}</text>
+    <text x="712" y="313" text-anchor="middle" font-size="10" fill="#8A6BA8">/docs · /screenshots/*</text>
+    <text x="712" y="331" text-anchor="middle" font-size="10" fill="#8A6BA8">CORS · StaticFiles · Pydantic</text>
+  </g>
+
+  <!-- ===================== PostgreSQL ===================== -->
+  <g>
+    <rect x="1000" y="240" width="350" height="110" rx="10" fill="url(#boxGreen)" stroke="#00FF9D" stroke-width="2" filter="url(#glowGreen)"/>
+    <circle cx="1028" cy="275" r="10" fill="none" stroke="#00FF9D" stroke-width="2"/>
+    <ellipse cx="1028" cy="272" rx="6" ry="2" fill="#00FF9D"/>
+    <ellipse cx="1028" cy="278" rx="6" ry="2" fill="#00FF9D" opacity="0.6"/>
+    <text x="1180" y="272" text-anchor="middle" font-size="15" font-weight="700" fill="#00FF9D" letter-spacing="2">PostgreSQL 16</text>
+    <text x="1180" y="295" text-anchor="middle" font-size="11" fill="#00FF9D" opacity="0.75">scan_jobs · host_results</text>
+    <text x="1180" y="313" text-anchor="middle" font-size="10" fill="#8A6BA8">60+ fields per result</text>
+    <text x="1180" y="331" text-anchor="middle" font-size="10" fill="#8A6BA8">pool_pre_ping · SQLAlchemy 2.0</text>
+  </g>
+
+  <!-- ===================== Redis ===================== -->
+  <g>
+    <rect x="80" y="420" width="280" height="110" rx="10" fill="url(#boxPink2)" stroke="#FF006E" stroke-width="2" filter="url(#glowPink2)"/>
+    <circle cx="108" cy="455" r="10" fill="none" stroke="#FF006E" stroke-width="2"/>
+    <path d="M 103 455 L 108 450 L 113 455 L 108 460 Z" fill="#FF006E"/>
+    <text x="240" y="452" text-anchor="middle" font-size="15" font-weight="700" fill="#FF006E" letter-spacing="2">Redis 7</text>
+    <text x="240" y="475" text-anchor="middle" font-size="11" fill="#FF66B3">Celery Broker</text>
+    <text x="240" y="493" text-anchor="middle" font-size="10" fill="#8A6BA8">queue · 127.0.0.1:6379</text>
+    <text x="240" y="511" text-anchor="middle" font-size="10" fill="#8A6BA8">retry_on_startup · ping 3s</text>
+  </g>
+
+  <!-- ===================== Celery Worker ===================== -->
+  <g>
+    <rect x="500" y="420" width="400" height="110" rx="10" fill="url(#boxPink)" stroke="#FF2D95" stroke-width="2" filter="url(#glowPink)"/>
+    <circle cx="528" cy="455" r="10" fill="none" stroke="#FF2D95" stroke-width="2"/>
+    <path d="M 523 455 L 533 455 M 528 450 L 528 460" stroke="#FF2D95" stroke-width="2"/>
+    <text x="712" y="452" text-anchor="middle" font-size="15" font-weight="700" fill="#FF2D95" letter-spacing="2">Celery Worker</text>
+    <text x="712" y="475" text-anchor="middle" font-size="11" fill="#FF66B3">concurrency=2 · soft=150s · hard=180s</text>
+    <text x="712" y="493" text-anchor="middle" font-size="10" fill="#8A6BA8">CAP_NET_RAW · CAP_NET_ADMIN</text>
+    <text x="712" y="511" text-anchor="middle" font-size="10" fill="#8A6BA8">shm 2GB · tasks.run_scan</text>
+  </g>
+
+  <!-- ===================== Screenshots ===================== -->
+  <g>
+    <rect x="1000" y="420" width="350" height="110" rx="10" fill="url(#boxYellow)" stroke="#FFB800" stroke-width="2" filter="url(#glowYellow)"/>
+    <circle cx="1028" cy="455" r="10" fill="none" stroke="#FFB800" stroke-width="2"/>
+    <rect x="1023" y="451" width="10" height="8" rx="1" fill="#FFB800"/>
+    <text x="1180" y="452" text-anchor="middle" font-size="15" font-weight="700" fill="#FFB800" letter-spacing="2">Screenshots Volume</text>
+    <text x="1180" y="475" text-anchor="middle" font-size="11" fill="#FFB800" opacity="0.75">./screenshots/*.png</text>
+    <text x="1180" y="493" text-anchor="middle" font-size="10" fill="#8A6BA8">job{id}_{ip}.png</text>
+    <text x="1180" y="511" text-anchor="middle" font-size="10" fill="#8A6BA8">served by /screenshots</text>
+  </g>
+
+  <!-- ===================== scanner.py ===================== -->
+  <g>
+    <rect x="150" y="620" width="280" height="110" rx="10" fill="url(#boxCyan)" stroke="#00F0FF" stroke-width="2" filter="url(#glowCyan)"/>
+    <text x="290" y="652" text-anchor="middle" font-size="14" font-weight="700" fill="#00F0FF" letter-spacing="2">scanner.py</text>
+    <text x="290" y="676" text-anchor="middle" font-size="11" fill="#00F0FF" opacity="0.75">Masscan + Nmap</text>
+    <text x="290" y="696" text-anchor="middle" font-size="10" fill="#8A6BA8">IP / CIDR / URL detect</text>
+    <text x="290" y="713" text-anchor="middle" font-size="10" fill="#8A6BA8">TLS · HTTP · crawl</text>
+  </g>
+
+  <!-- ===================== intel.py ===================== -->
+  <g>
+    <rect x="560" y="620" width="280" height="110" rx="10" fill="url(#boxCyan)" stroke="#00F0FF" stroke-width="2" filter="url(#glowCyan)"/>
+    <text x="700" y="652" text-anchor="middle" font-size="14" font-weight="700" fill="#00F0FF" letter-spacing="2">intel.py</text>
+    <text x="700" y="676" text-anchor="middle" font-size="11" fill="#00F0FF" opacity="0.75">OSINT collectors</text>
+    <text x="700" y="696" text-anchor="middle" font-size="10" fill="#8A6BA8">DNS · WHOIS · Geo</text>
+    <text x="700" y="713" text-anchor="middle" font-size="10" fill="#8A6BA8">WAF · email · meta</text>
+  </g>
+
+  <!-- ===================== Playwright ===================== -->
+  <g>
+    <rect x="970" y="620" width="280" height="110" rx="10" fill="url(#boxCyan)" stroke="#00F0FF" stroke-width="2" filter="url(#glowCyan)"/>
+    <text x="1110" y="652" text-anchor="middle" font-size="14" font-weight="700" fill="#00F0FF" letter-spacing="2">Playwright</text>
+    <text x="1110" y="676" text-anchor="middle" font-size="11" fill="#00F0FF" opacity="0.75">Chromium headless</text>
+    <text x="1110" y="696" text-anchor="middle" font-size="10" fill="#8A6BA8">--no-sandbox</text>
+    <text x="1110" y="713" text-anchor="middle" font-size="10" fill="#8A6BA8">domcontentloaded 10s</text>
+  </g>
+
+  <!-- ===================== ARROWS ===================== -->
+
+  <!-- Frontend -> FastAPI -->
+  <path d="M 700 190 L 700 240" stroke="#FF2D95" stroke-width="2" fill="none" marker-end="url(#arrPink)"/>
+  <text x="710" y="220" font-size="10" fill="#FF66B3">HTTP :9745</text>
+
+  <!-- FastAPI <-> PostgreSQL -->
+  <path d="M 900 285 L 1000 285" stroke="#00FF9D" stroke-width="2" fill="none" marker-end="url(#arrGreen)"/>
+  <path d="M 1000 305 L 900 305" stroke="#00FF9D" stroke-width="2" fill="none" marker-end="url(#arrGreen)"/>
+  <text x="950" y="277" font-size="10" fill="#00FF9D" text-anchor="middle">create</text>
+  <text x="950" y="321" font-size="10" fill="#00FF9D" text-anchor="middle">results</text>
+
+  <!-- FastAPI -> Redis (enqueue) -->
+  <path d="M 550 350 L 550 400 L 220 400 L 220 420" stroke="#FF2D95" stroke-width="2" fill="none" marker-end="url(#arrPink)"/>
+  <text x="350" y="392" font-size="10" fill="#FF66B3" text-anchor="middle">enqueue · job_id</text>
+
+  <!-- Redis -> Celery -->
+  <path d="M 360 475 L 500 475" stroke="#FF006E" stroke-width="2" fill="none" marker-end="url(#arrPink2)"/>
+  <text x="430" y="467" font-size="10" fill="#FF66B3" text-anchor="middle">consume</text>
+
+  <!-- Celery -> scanner.py -->
+  <path d="M 620 530 L 290 620" stroke="#00F0FF" stroke-width="2" fill="none" marker-end="url(#arrCyan)"/>
+
+  <!-- Celery -> intel.py -->
+  <path d="M 700 530 L 700 620" stroke="#00F0FF" stroke-width="2" fill="none" marker-end="url(#arrCyan)"/>
+
+  <!-- Celery -> Playwright -->
+  <path d="M 780 530 L 1110 620" stroke="#00F0FF" stroke-width="2" fill="none" marker-end="url(#arrCyan)"/>
+
+  <!-- Celery -> PostgreSQL (write results, dashed) -->
+  <path d="M 880 420 L 880 380 L 1175 380 L 1175 350" stroke="#00FF9D" stroke-width="2" fill="none" marker-end="url(#arrGreen)" stroke-dasharray="6 4"/>
+  <text x="1030" y="372" font-size="10" fill="#00FF9D" text-anchor="middle">write results</text>
+
+  <!-- Playwright -> Screenshots -->
+  <path d="M 1110 620 L 1110 530" stroke="#FFB800" stroke-width="2" fill="none" marker-end="url(#arrYellow)" stroke-dasharray="6 4"/>
+  <text x="1122" y="578" font-size="10" fill="#FFB800">save PNG</text>
+
+  <!-- ===================== LEGEND ===================== -->
+  <g>
+    <line x1="150" y1="780" x2="1250" y2="780" stroke="#FF2D95" stroke-width="1" opacity="0.3"/>
+    <text x="700" y="802" text-anchor="middle" font-size="11" fill="#FF2D95" letter-spacing="4" font-weight="700">LEGEND</text>
+
+    <!-- Item 1: Application -->
+    <rect x="180" y="820" width="14" height="14" rx="3" fill="#FF2D95"/>
+    <text x="202" y="832" font-size="11" fill="#F0E6FF">Application</text>
+
+    <!-- Item 2: Broker -->
+    <rect x="340" y="820" width="14" height="14" rx="3" fill="#FF006E"/>
+    <text x="362" y="832" font-size="11" fill="#F0E6FF">Broker</text>
+
+    <!-- Item 3: Database -->
+    <rect x="470" y="820" width="14" height="14" rx="3" fill="#00FF9D"/>
+    <text x="492" y="832" font-size="11" fill="#F0E6FF">Database</text>
+
+    <!-- Item 4: Files -->
+    <rect x="610" y="820" width="14" height="14" rx="3" fill="#FFB800"/>
+    <text x="632" y="832" font-size="11" fill="#F0E6FF">Files</text>
+
+    <!-- Item 5: Collectors -->
+    <rect x="720" y="820" width="14" height="14" rx="3" fill="#00F0FF"/>
+    <text x="742" y="832" font-size="11" fill="#F0E6FF">Collectors</text>
+
+    <!-- Item 6: Solid flow -->
+    <line x1="880" y1="827" x2="920" y2="827" stroke="#FF2D95" stroke-width="2"/>
+    <text x="928" y="832" font-size="11" fill="#F0E6FF">Sync</text>
+
+    <!-- Item 7: Dashed flow -->
+    <line x1="1010" y1="827" x2="1050" y2="827" stroke="#FF2D95" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="1058" y="832" font-size="11" fill="#F0E6FF">Async</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="700" y="872" text-anchor="middle" font-size="10" fill="#8A6BA8" letter-spacing="3">github.com/gunout/ip-scanner · MIT License</text>
+</svg>
