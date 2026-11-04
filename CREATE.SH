@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  IP EXPERT SCANNER v3 — Rose Fluo + OSINT complet
+#  IP EXPERT SCANNER v4 — Rose Fluo + OSINT ULTRA complet
 #  Port web : 9745 · Usage: sudo ./CREATE.SH
 # ============================================================
 set -euo pipefail
@@ -12,7 +12,6 @@ fail() { echo -e "${RED}[!]${NC} $1"; exit 1; }
 
 export APP_PORT=9745
 
-# ---------- Nettoyage ----------
 log "Arrêt de l'ancien déploiement..."
 docker compose down -v --remove-orphans 2>/dev/null || true
 docker ps -q --filter "publish=${APP_PORT}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
@@ -20,7 +19,6 @@ for i in {1..15}; do
   if ss -tln 2>/dev/null | grep -qE ":${APP_PORT}\b"; then log "Port ${APP_PORT} occupé ($i/15)…"; sleep 1; else break; fi
 done
 
-# ---------- Prérequis ----------
 log "Vérification des prérequis..."
 [[ $EUID -eq 0 ]] || fail "Lancez avec sudo."
 command -v docker &>/dev/null || fail "Docker requis."
@@ -88,7 +86,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 EOF
 
 # ============================================================
-# models.py
+# models.py — v4 : +20 champs
 # ============================================================
 cat > backend/models.py <<'EOF'
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index, Text
@@ -134,22 +132,38 @@ class HostResult(Base):
     powered_by = Column(String, nullable=True)
     cache_control = Column(String, nullable=True)
     http2 = Column(Integer, nullable=True)
+    http3 = Column(Integer, nullable=True)                  # NEW
     compression = Column(String, nullable=True)
+    server_timing = Column(Text, nullable=True)             # NEW
+    cache_detail = Column(Text, nullable=True)              # NEW
+    x_robots_tag = Column(String, nullable=True)            # NEW
+    content_language = Column(String, nullable=True)        # NEW
     raw_headers = Column(Text, nullable=True)
 
-    # Sécurité
+    # Sécurité (v3 classique)
     security_headers = Column(Text, nullable=True)
     security_score = Column(Integer, nullable=True)
     security_missing = Column(Text, nullable=True)
+    # Sécurité moderne (v4)
+    modern_headers = Column(Text, nullable=True)            # NEW
+    modern_missing = Column(Text, nullable=True)            # NEW
+    modern_score = Column(Integer, nullable=True)           # NEW (/55)
+    security_score_ext = Column(Integer, nullable=True)     # NEW (/130)
+    hsts_max_age = Column(Integer, nullable=True)           # NEW
+    hsts_preload = Column(Integer, nullable=True)           # NEW (flag présent)
+    hsts_preloaded = Column(Integer, nullable=True)         # NEW (via hstspreload.org)
     cookies = Column(Text, nullable=True)
+    cookies_detail = Column(Text, nullable=True)            # NEW
     sensitive_paths = Column(Text, nullable=True)
     robots_txt = Column(Text, nullable=True)
     security_txt = Column(Text, nullable=True)
     sitemap_found = Column(Integer, nullable=True)
+    meta_refresh = Column(String, nullable=True)            # NEW
 
     # TLS
     tls_version = Column(String, nullable=True)
     tls_cipher = Column(String, nullable=True)
+    tls_versions_supported = Column(Text, nullable=True)    # NEW (TLS 1.0/1.1/1.2/1.3)
     cert_chain_len = Column(Integer, nullable=True)
     cert_subject = Column(String, nullable=True)
     cert_issuer = Column(String, nullable=True)
@@ -171,17 +185,30 @@ class HostResult(Base):
     favicon_hash = Column(String, nullable=True)
     html_stats = Column(Text, nullable=True)
     structured_data = Column(Text, nullable=True)
+    html_comments = Column(Text, nullable=True)             # NEW
+    js_endpoints = Column(Text, nullable=True)              # NEW
+    script_srcs = Column(Text, nullable=True)               # NEW
+    asset_urls = Column(Text, nullable=True)                # NEW
+    i18n = Column(Text, nullable=True)                      # NEW
+    forms_detail = Column(Text, nullable=True)              # NEW
 
     # DNS / WHOIS / Géo
     dns_records = Column(Text, nullable=True)
     dns_extra = Column(Text, nullable=True)
+    dns_modern = Column(Text, nullable=True)                # NEW (HTTPS/SVCB/TLSA)
+    wildcard_dns = Column(Integer, nullable=True)           # NEW (1/0/-1)
     dnssec = Column(Integer, nullable=True)
     dns_zone_transfer = Column(Integer, nullable=True)
     email_security = Column(Text, nullable=True)
     subdomains = Column(Text, nullable=True)
+    ct_logs_count = Column(Integer, nullable=True)          # NEW
     whois_data = Column(Text, nullable=True)
     geolocation = Column(Text, nullable=True)
     reverse_dns = Column(String, nullable=True)
+
+    # OSINT externe
+    shodan_internetdb = Column(Text, nullable=True)         # NEW
+    wayback = Column(Text, nullable=True)                   # NEW
 
     # WAF / CDN / Système
     waf = Column(String, nullable=True)
@@ -195,11 +222,13 @@ Index("ix_host_port", HostResult.ip, HostResult.port)
 EOF
 
 # ============================================================
-# intel.py — v3 : OSINT étendu
+# intel.py — v4 : OSINT étendu avec en-têtes modernes, HTTP/3,
+#                 Shodan InternetDB, Wayback, TLS probe, HTML comments
 # ============================================================
 cat > backend/intel.py <<'PYEOF'
-"""Collecte OSINT : DNS, WHOIS, Géo, Sécurité, Tech, WAF, Meta, Subdomains."""
-import base64, json, re, socket, threading, time
+"""Collecte OSINT v4 : DNS, WHOIS, Géo, Sécurité (classique + moderne),
+Tech, WAF, Meta, Subdomains, HTML comments, JS endpoints, Shodan, Wayback."""
+import base64, json, random, re, socket, ssl, threading, time
 from urllib.parse import urlparse
 
 import requests
@@ -221,6 +250,18 @@ SECURITY_HEADERS = {
     "x-xss-protection":          {"w": 5,  "label": "X-XSS-Protection"},
 }
 
+# v4 : en-têtes de sécurité MODERNES (score max 55)
+MODERN_HEADERS = {
+    "cross-origin-opener-policy":          {"w": 10, "label": "COOP"},
+    "cross-origin-embedder-policy":        {"w": 10, "label": "COEP"},
+    "cross-origin-resource-policy":        {"w": 5,  "label": "CORP"},
+    "origin-agent-cluster":                {"w": 5,  "label": "Origin-Agent-Cluster"},
+    "reporting-endpoints":                 {"w": 5,  "label": "Reporting-Endpoints"},
+    "document-policy":                     {"w": 5,  "label": "Document-Policy"},
+    "x-permitted-cross-domain-policies":   {"w": 3,  "label": "X-Permitted-Cross-Domain-Policies"},
+    "content-security-policy-report-only": {"w": 2,  "label": "CSP-Report-Only"},
+}
+
 TECH_PATTERNS = {
     "nginx": "Nginx", "apache": "Apache", "iis": "Microsoft IIS",
     "cloudflare": "Cloudflare", "caddy": "Caddy", "litespeed": "LiteSpeed",
@@ -240,24 +281,15 @@ SENSITIVE_PATHS = [
     "/config.php", "/server-status", "/actuator/health",
 ]
 
-# WAF / CDN fingerprints (header -> nom)
 WAF_SIGNATURES = {
-    "cf-ray": "Cloudflare WAF",
-    "x-sucuri-id": "Sucuri",
-    "x-iinfo": "Imperva Incapsula",
-    "server: cloudflare": "Cloudflare",
-    "x-akamai-transformed": "Akamai",
-    "akamai-grn": "Akamai",
-    "x-amzn-requestid": "AWS WAF",
-    "x-amz-cf-id": "AWS CloudFront",
-    "x-fastly-request-id": "Fastly",
-    "x-fw-hash": "FortiWeb",
-    "barra_counter_session": "Barracuda",
-    "x-waf-event-info": "F5 BIG-IP",
-    "x-cdn": "Generic CDN",
-    "x-cache": "Generic CDN Cache",
-    "x-varnish": "Varnish",
-    "x-cache-hits": "Fastly/Varnish",
+    "cf-ray": "Cloudflare WAF", "x-sucuri-id": "Sucuri",
+    "x-iinfo": "Imperva Incapsula", "server: cloudflare": "Cloudflare",
+    "x-akamai-transformed": "Akamai", "akamai-grn": "Akamai",
+    "x-amzn-requestid": "AWS WAF", "x-amz-cf-id": "AWS CloudFront",
+    "x-fastly-request-id": "Fastly", "x-fw-hash": "FortiWeb",
+    "barra_counter_session": "Barracuda", "x-waf-event-info": "F5 BIG-IP",
+    "x-cdn": "Generic CDN", "x-cache": "Generic CDN Cache",
+    "x-varnish": "Varnish", "x-cache-hits": "Fastly/Varnish",
     "via": "Proxy / CDN",
 }
 
@@ -275,9 +307,9 @@ COMMON_DKIM_SELECTORS = ["default", "mail", "google", "k1", "s1",
                           "selector1", "selector2", "dkim", "smtp"]
 
 
-# ---------------------------------------------------------
-# DNS classique + extra (CAA, SRV, DMARC, DNSSEC, SPF, DKIM)
-# ---------------------------------------------------------
+# =========================================================
+# DNS classique + extra
+# =========================================================
 def enumerate_dns(hostname: str) -> dict:
     out = {"a": [], "aaaa": [], "mx": [], "ns": [], "txt": [],
            "cname": [], "soa": None}
@@ -305,10 +337,8 @@ def enumerate_dns(hostname: str) -> dict:
 
 
 def enumerate_dns_extra(hostname: str, dns_base: dict) -> dict:
-    """CAA, SRV, DMARC, SPF, DKIM, DNSSEC."""
     out = {"caa": [], "srv": [], "dmarc": None, "spf": None,
            "dkim_selectors": [], "dnssec": False}
-    # CAA
     try:
         for r in dns.resolver.resolve(hostname, "CAA", lifetime=4):
             out["caa"].append({
@@ -316,31 +346,24 @@ def enumerate_dns_extra(hostname: str, dns_base: dict) -> dict:
                 "tag": r.tag.decode() if isinstance(r.tag, bytes) else str(r.tag),
                 "value": r.value.decode() if isinstance(r.value, bytes) else str(r.value),
             })
-    except Exception:
-        pass
-    # SRV (quelques conventions)
+    except Exception: pass
     for svc in ["_sip._tcp", "_imap._tcp", "_xmpp-server._tcp", "_autodiscover._tcp"]:
         try:
             for r in dns.resolver.resolve(f"{svc}.{hostname}", "SRV", lifetime=3):
                 out["srv"].append({"name": svc, "target": str(r.target).rstrip("."),
                                    "port": r.port, "priority": r.priority})
-        except Exception:
-            continue
-    # SPF (parmi les TXT)
+        except Exception: continue
     for txt in dns_base.get("txt", []):
         if txt.startswith("v=spf1"):
             out["spf"] = txt
             break
-    # DMARC
     try:
         for r in dns.resolver.resolve(f"_dmarc.{hostname}", "TXT", lifetime=4):
             txt = str(r).strip('"')
             if "v=DMARC1" in txt:
                 out["dmarc"] = txt[:400]
                 break
-    except Exception:
-        pass
-    # DKIM (selectors communs)
+    except Exception: pass
     for sel in COMMON_DKIM_SELECTORS:
         try:
             for r in dns.resolver.resolve(f"{sel}._domainkey.{hostname}", "TXT", lifetime=3):
@@ -348,92 +371,91 @@ def enumerate_dns_extra(hostname: str, dns_base: dict) -> dict:
                 if "v=DKIM1" in txt or "p=" in txt:
                     out["dkim_selectors"].append(sel)
                     break
-        except Exception:
-            continue
-    # DNSSEC (DNSKEY présent)
+        except Exception: continue
     try:
         dns.resolver.resolve(hostname, "DNSKEY", lifetime=4)
         out["dnssec"] = True
-    except Exception:
-        pass
+    except Exception: pass
     return out
 
 
-def analyze_email_security(hostname: str, dns_extra: dict) -> dict:
-    spf = dns_extra.get("spf") or ""
-    dmarc = dns_extra.get("dmarc") or ""
-    dkim = dns_extra.get("dkim_selectors") or []
-    result = {
-        "spf_present": bool(spf),
-        "spf_policy": "—",
-        "dmarc_present": bool(dmarc),
-        "dmarc_policy": "—",
-        "dkim_present": bool(dkim),
-        "dkim_selectors": dkim,
-        "score": 0,
-        "max": 3,
-    }
-    if spf:
-        if "-all" in spf:
-            result["spf_policy"] = "hardfail (-all)"; result["score"] += 1
-        elif "~all" in spf:
-            result["spf_policy"] = "softfail (~all)"; result["score"] += 1
-        else:
-            result["spf_policy"] = "neutral/unknown"
-    if dmarc:
-        m = re.search(r"\bp=(\w+)", dmarc)
-        if m:
-            result["dmarc_policy"] = m.group(1)
-            if m.group(1) in ("quarantine", "reject"):
-                result["score"] += 1
-    if dkim:
-        result["score"] += 1
-    return result
+def enumerate_dns_modern(hostname: str) -> dict:
+    """v4 : HTTPS (type 65), SVCB, TLSA."""
+    out = {"https": [], "tlsa": []}
+    try:
+        for r in dns.resolver.resolve(hostname, "HTTPS", lifetime=4):
+            out["https"].append(str(r)[:300])
+    except Exception: pass
+    for prefix in ["_443._tcp", "_25._tcp", "_853._tcp"]:
+        try:
+            for r in dns.resolver.resolve(f"{prefix}.{hostname}", "TLSA", lifetime=3):
+                out["tlsa"].append({"name": prefix, "record": str(r)[:300]})
+                break
+        except Exception: continue
+    return out
+
+
+def check_wildcard_dns(hostname: str) -> int:
+    """1 = wildcard actif, 0 = non, -1 = erreur."""
+    try:
+        rnd = f"zzz{random.randint(10000,99999)}test.{hostname}"
+        try:
+            dns.resolver.resolve(rnd, "A", lifetime=4)
+            return 1
+        except dns.resolver.NXDOMAIN:
+            return 0
+        except dns.resolver.NoNameservers:
+            return 0
+        except Exception:
+            return -1
+    except Exception:
+        return -1
 
 
 def try_zone_transfer(hostname: str, ns_list: list) -> int:
-    """Tente un AXFR sur chaque NS. Retourne 1 si succès."""
     for ns in ns_list[:3]:
         try:
             ns_ip = socket.gethostbyname(ns)
             dns.zone.from_xfr(dns.query.xfr(ns_ip, hostname, timeout=5))
             return 1
-        except Exception:
-            continue
+        except Exception: continue
     return 0
 
 
-# ---------------------------------------------------------
-# Subdomains via crt.sh (Certificate Transparency)
-# ---------------------------------------------------------
+# =========================================================
+# Subdomains + CT logs
+# =========================================================
 def get_subdomains_crtsh(hostname: str, limit: int = 100) -> list:
     try:
-        r = requests.get(
-            f"https://crt.sh/?q=%25.{hostname}&output=json",
-            timeout=12,
-            headers={"User-Agent": "IPExpertScanner/3.0"},
-        )
-        if r.status_code != 200:
-            return []
-        data = r.json()
+        r = requests.get(f"https://crt.sh/?q=%25.{hostname}&output=json",
+                        timeout=12, headers={"User-Agent": "IPExpertScanner/4.0"})
+        if r.status_code != 200: return []
         subs = set()
-        for entry in data:
+        for entry in r.json():
             for name in entry.get("name_value", "").split("\n"):
                 name = name.strip().lower()
                 if name.endswith(f".{hostname}") or name == hostname:
                     subs.add(name)
-                    if len(subs) >= limit:
-                        break
-            if len(subs) >= limit:
-                break
+                    if len(subs) >= limit: break
+            if len(subs) >= limit: break
         return sorted(subs)[:limit]
     except Exception:
         return []
 
 
-# ---------------------------------------------------------
-# WHOIS
-# ---------------------------------------------------------
+def check_ct_logs(hostname: str) -> int:
+    """Nombre de certificats dans les CT logs (via crt.sh)."""
+    try:
+        r = requests.get(f"https://crt.sh/?q={hostname}&output=json", timeout=10)
+        if r.status_code == 200:
+            return len(r.json())
+    except Exception: pass
+    return 0
+
+
+# =========================================================
+# WHOIS / Géo
+# =========================================================
 def get_whois(hostname: str) -> dict:
     result = {"error": "timeout"}
     def _worker():
@@ -455,29 +477,22 @@ def get_whois(hostname: str) -> dict:
     return dict(result)
 
 
-# ---------------------------------------------------------
-# Géolocalisation
-# ---------------------------------------------------------
 def get_geolocation(ip: str) -> dict:
     try:
-        r = requests.get(
-            f"http://ip-api.com/json/{ip}"
-            "?fields=status,country,countryCode,regionName,city,isp,org,as,query",
-            timeout=5,
-        )
+        r = requests.get(f"http://ip-api.com/json/{ip}"
+            "?fields=status,country,countryCode,regionName,city,isp,org,as,query", timeout=5)
         if r.status_code == 200 and r.json().get("status") == "success":
             d = r.json()
             return {"country": d.get("country"), "country_code": d.get("countryCode"),
                     "region": d.get("regionName"), "city": d.get("city"),
                     "isp": d.get("isp"), "org": d.get("org"), "asn": d.get("as")}
-    except Exception:
-        pass
+    except Exception: pass
     return {}
 
 
-# ---------------------------------------------------------
-# Sécurité / Tech / WAF
-# ---------------------------------------------------------
+# =========================================================
+# Sécurité classique + moderne + HSTS preload
+# =========================================================
 def analyze_security_headers(headers: dict) -> dict:
     h = {k.lower(): v for k, v in headers.items()}
     present, missing, score = {}, [], 0
@@ -490,6 +505,44 @@ def analyze_security_headers(headers: dict) -> dict:
     return {"present": present, "missing": missing, "score": score, "max": 75}
 
 
+def analyze_modern_headers(headers: dict) -> dict:
+    """v4 : COOP, COEP, OAC, Reporting-Endpoints, etc."""
+    h = {k.lower(): v for k, v in headers.items()}
+    present, missing, score = {}, [], 0
+    for hdr, info in MODERN_HEADERS.items():
+        if hdr in h:
+            present[info["label"]] = str(h[hdr])[:200]
+            score += info["w"]
+        else:
+            missing.append(info["label"])
+    return {"present": present, "missing": missing, "score": score, "max": 55}
+
+
+def get_hsts_info(headers: dict) -> dict:
+    h = {k.lower(): v for k, v in headers.items()}
+    hsts = h.get("strict-transport-security", "")
+    out = {"max_age": 0, "preload": 0}
+    if hsts:
+        m = re.search(r"max-age=(\d+)", hsts)
+        if m: out["max_age"] = int(m.group(1))
+        out["preload"] = 1 if "preload" in hsts.lower() else 0
+    return out
+
+
+def check_hsts_preload(hostname: str) -> int:
+    """Interroge hstspreload.org pour savoir si le domaine est préchargé."""
+    try:
+        r = requests.get(f"https://hstspreload.org/api/v2/status?domain={hostname}", timeout=6)
+        if r.status_code == 200:
+            d = r.json()
+            return 1 if d.get("status") == "preloaded" else 0
+    except Exception: pass
+    return 0
+
+
+# =========================================================
+# Tech / WAF / Cookies / Cache
+# =========================================================
 def detect_technologies(headers: dict, html: str) -> list:
     h = {k.lower(): v for k, v in headers.items()}
     blob = str(h.get("server", "")) + " " + str(h.get("x-powered-by", "")) + " " + (html[:6000].lower() if html else "")
@@ -499,8 +552,7 @@ def detect_technologies(headers: dict, html: str) -> list:
         meta = soup.find("meta", attrs={"name": "generator"})
         if meta and meta.get("content"):
             techs.add(str(meta["content"])[:60])
-    except Exception:
-        pass
+    except Exception: pass
     return sorted(techs)
 
 
@@ -521,8 +573,7 @@ def analyze_cookies(response) -> list:
     out = []
     try:
         raw = response.raw.headers.getlist("Set-Cookie") if hasattr(response.raw, "headers") else []
-    except Exception:
-        raw = []
+    except Exception: raw = []
     for c in raw:
         low = c.lower()
         out.append({"name": c.split("=")[0].strip(),
@@ -532,14 +583,70 @@ def analyze_cookies(response) -> list:
     return out
 
 
+def analyze_cookies_detailed(response) -> list:
+    """v4 : SameSite value, Domain, Path."""
+    out = []
+    try:
+        raw = response.raw.headers.getlist("Set-Cookie") if hasattr(response.raw, "headers") else []
+    except Exception: raw = []
+    for c in raw:
+        low = c.lower()
+        name = c.split("=")[0].strip()[:50]
+        samesite_val = "default"
+        m = re.search(r"samesite=(\w+)", low)
+        if m: samesite_val = m.group(1)
+        domain = None
+        m2 = re.search(r"domain=([^;,\s]+)", low)
+        if m2: domain = m2.group(1)
+        path = None
+        m3 = re.search(r"path=([^;,\s]+)", low)
+        if m3: path = m3.group(1)
+        out.append({"name": name, "secure": "secure" in low,
+                    "httponly": "httponly" in low,
+                    "samesite": samesite_val,
+                    "domain": domain, "path": path})
+    return out
+
+
+def parse_server_timing(headers: dict) -> dict:
+    """v4 : extrait les latences internes (Server-Timing)."""
+    h = {k.lower(): v for k, v in headers.items()}
+    st = h.get("server-timing", "")
+    out = {}
+    for part in st.split(","):
+        m = re.match(r"\s*([\w-]+);dur=([\d.\-]+)", part.strip())
+        if m:
+            try: out[m.group(1)] = float(m.group(2))
+            except: pass
+    return out
+
+
+def parse_cache_detail(headers: dict) -> dict:
+    """v4 : Age, X-Cache, X-Cache-Hits, Vary."""
+    h = {k.lower(): v for k, v in headers.items()}
+    return {
+        "age": h.get("age"),
+        "x_cache": h.get("x-cache"),
+        "x_cache_hits": h.get("x-cache-hits"),
+        "vary": h.get("vary"),
+        "cache_control": h.get("cache-control"),
+        "expires": h.get("expires"),
+    }
+
+
+def check_http3(headers: dict) -> int:
+    """v4 : HTTP/3 via Alt-Svc."""
+    h = {k.lower(): v for k, v in headers.items()}
+    alt = h.get("alt-svc", "")
+    return 1 if ("h3=" in alt or "h3-" in alt) else 0
+
+
 def detect_http_methods(url: str) -> list:
     try:
         r = requests.options(url, timeout=5, verify=False)
         allow = r.headers.get("Allow", "")
-        if allow:
-            return [m.strip() for m in allow.split(",")]
-    except Exception:
-        pass
+        if allow: return [m.strip() for m in allow.split(",")]
+    except Exception: pass
     return []
 
 
@@ -549,8 +656,7 @@ def get_robots(url: str):
         r = requests.get(f"{base}/robots.txt", timeout=5, verify=False)
         if r.status_code == 200 and "text" in r.headers.get("Content-Type", ""):
             return r.text[:3000]
-    except Exception:
-        pass
+    except Exception: pass
     return None
 
 
@@ -561,8 +667,7 @@ def get_security_txt(url: str):
             r = requests.get(base + path, timeout=5, verify=False)
             if r.status_code == 200 and "text" in r.headers.get("Content-Type", ""):
                 return r.text[:2000]
-    except Exception:
-        pass
+    except Exception: pass
     return None
 
 
@@ -572,8 +677,7 @@ def check_sitemap(url: str) -> int:
         r = requests.get(f"{base}/sitemap.xml", timeout=5, verify=False)
         if r.status_code == 200 and ("<urlset" in r.text or "<sitemapindex" in r.text):
             return 1
-    except Exception:
-        pass
+    except Exception: pass
     return 0
 
 
@@ -584,19 +688,17 @@ def check_sensitive_paths(base_url: str) -> list:
             r = requests.head(base_url + path, timeout=3, verify=False, allow_redirects=False)
             if r.status_code in (200, 301, 302, 401, 403):
                 found.append({"path": path, "status": r.status_code})
-        except Exception:
-            continue
+        except Exception: continue
     return found
 
 
-# ---------------------------------------------------------
-# Meta / OG tags
-# ---------------------------------------------------------
+# =========================================================
+# HTML analysis
+# =========================================================
 def extract_meta_tags(html: str) -> dict:
     out = {"title": None, "description": None, "keywords": None,
            "author": None, "generator": None, "og": {}, "twitter": {}}
-    if not html:
-        return out
+    if not html: return out
     try:
         soup = BeautifulSoup(html, "html.parser")
         if soup.title and soup.title.string:
@@ -611,20 +713,14 @@ def extract_meta_tags(html: str) -> dict:
             elif name == "generator": out["generator"] = content
             elif prop.startswith("og:"):       out["og"][prop] = content
             elif name.startswith("twitter:"):  out["twitter"][name] = content
-    except Exception:
-        pass
+    except Exception: pass
     return out
 
 
-# ---------------------------------------------------------
-# Emails / Social / HTML stats / Structured Data / Favicon
-# ---------------------------------------------------------
 def extract_emails(html: str) -> list:
-    if not html:
-        return []
+    if not html: return []
     pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    found = set(re.findall(pattern, html[:500000]))
-    return sorted(list(found))[:30]
+    return sorted(list(set(re.findall(pattern, html[:500000]))))[:30]
 
 
 def extract_social_links(links: list) -> list:
@@ -639,8 +735,7 @@ def extract_social_links(links: list) -> list:
 
 
 def extract_html_stats(html: str) -> dict:
-    if not html:
-        return {}
+    if not html: return {}
     try:
         soup = BeautifulSoup(html, "html.parser")
         scripts = soup.find_all("script")
@@ -656,13 +751,11 @@ def extract_html_stats(html: str) -> dict:
             "links": len(soup.find_all("a")),
             "meta_tags": len(soup.find_all("meta")),
         }
-    except Exception:
-        return {}
+    except Exception: return {}
 
 
 def extract_structured_data(html: str) -> list:
-    if not html:
-        return []
+    if not html: return []
     try:
         soup = BeautifulSoup(html, "html.parser")
         blocks = []
@@ -671,16 +764,112 @@ def extract_structured_data(html: str) -> list:
                 data = json.loads(s.string or "")
                 t = data.get("@type", "?") if isinstance(data, dict) else "?"
                 blocks.append({"type": t})
-            except Exception:
-                continue
-            if len(blocks) >= 10:
-                break
+            except Exception: continue
+            if len(blocks) >= 10: break
         return blocks
-    except Exception:
-        return []
+    except Exception: return []
 
 
-def get_favicon_hash(url: str) -> str:
+def extract_html_comments(html: str) -> list:
+    """v4 : commentaires HTML/JS (leak potentiel)."""
+    if not html: return []
+    raw = re.findall(r"<!--(.*?)-->", html[:200000], re.DOTALL)
+    out = []
+    for c in raw[:30]:
+        c = c.strip()
+        if 0 < len(c) < 500:
+            out.append(c[:300])
+    return out
+
+
+def extract_js_endpoints(html: str) -> list:
+    """v4 : endpoints API visibles dans le JS inline."""
+    if not html: return []
+    patterns = [
+        r'["\'](/api/[a-zA-Z0-9_\-/{}.:]+)["\']',
+        r'["\'](/v\d+/[a-zA-Z0-9_\-/{}.:]+)["\']',
+        r'fetch\(["\']([^"\']{3,200})["\']',
+        r'axios\.[a-z]+\(["\']([^"\']{3,200})["\']',
+        r'["\'](https?://[a-zA-Z0-9.-]+\.[a-z]+/[a-zA-Z0-9_\-/{}.:]+)["\']',
+    ]
+    endpoints = set()
+    for p in patterns:
+        for m in re.findall(p, html[:500000]):
+            if isinstance(m, tuple): m = m[0]
+            if 2 < len(m) < 200:
+                endpoints.add(m)
+    return sorted(list(endpoints))[:50]
+
+
+def extract_script_srcs(html: str) -> list:
+    """v4 : liste des <script src>."""
+    if not html: return []
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        return [s["src"][:200] for s in soup.find_all("script", src=True)][:30]
+    except Exception: return []
+
+
+def extract_asset_urls(html: str) -> list:
+    """v4 : CSS + images."""
+    if not html: return []
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        assets = []
+        for link in soup.find_all("link", href=True)[:20]:
+            rel = " ".join(link.get("rel", []))
+            assets.append({"rel": rel[:30], "href": link["href"][:200]})
+        for img in soup.find_all("img", src=True)[:20]:
+            assets.append({"type": "img", "src": img["src"][:200]})
+        return assets[:40]
+    except Exception: return []
+
+
+def extract_i18n(html: str) -> dict:
+    """v4 : lang + hreflang."""
+    if not html: return {}
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        out = {"lang": None, "hreflang": []}
+        html_tag = soup.find("html")
+        if html_tag and html_tag.get("lang"):
+            out["lang"] = html_tag["lang"]
+        for link in soup.find_all("link", rel="alternate", hreflang=True)[:20]:
+            out["hreflang"].append({"lang": link["hreflang"], "href": link.get("href", "")[:200]})
+        return out
+    except Exception: return {}
+
+
+def extract_forms_detail(html: str) -> list:
+    """v4 : détail des formulaires."""
+    if not html: return []
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        out = []
+        for f in soup.find_all("form")[:10]:
+            out.append({
+                "action": (f.get("action") or "")[:200],
+                "method": (f.get("method") or "get").upper(),
+                "inputs": len(f.find_all("input")),
+                "hidden": len(f.find_all("input", {"type": "hidden"})),
+                "csrf": len(f.find_all("input", {"name": re.compile(r"csrf|token", re.I)})),
+            })
+        return out
+    except Exception: return []
+
+
+def extract_meta_refresh(html: str):
+    """v4 : <meta http-equiv='refresh'>."""
+    if not html: return None
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        m = soup.find("meta", attrs={"http-equiv": re.compile(r"refresh", re.I)})
+        if m: return (m.get("content") or "")[:200]
+    except Exception: pass
+    return None
+
+
+def get_favicon_hash(url: str):
     try:
         p = urlparse(url); base = f"{p.scheme}://{p.netloc}"
         r = requests.get(f"{base}/favicon.ico", timeout=5, verify=False)
@@ -688,40 +877,90 @@ def get_favicon_hash(url: str) -> str:
             import mmh3
             b64 = base64.encodebytes(r.content)
             return str(mmh3.hash(b64))
-    except Exception:
-        pass
+    except Exception: pass
     return None
 
 
-# ---------------------------------------------------------
-# HTTP avancé : redirect chain, HTTP/2
-# ---------------------------------------------------------
 def get_redirect_chain(url: str) -> list:
     try:
         r = requests.get(url, timeout=8, verify=False, allow_redirects=True)
         chain = [{"url": h.url, "status": h.status_code} for h in r.history]
         chain.append({"url": r.url, "status": r.status_code})
         return chain
-    except Exception:
-        return []
+    except Exception: return []
 
 
 def check_http2(hostname: str) -> int:
     try:
-        import ssl, socket
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         ctx.set_alpn_protocols(["h2", "http/1.1"])
         with socket.create_connection((hostname, 443), timeout=5) as sock:
             with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
                 return 1 if ssock.selected_alpn_protocol() == "h2" else 0
-    except Exception:
-        return 0
+    except Exception: return 0
+
+
+def probe_tls_versions(hostname: str, port: int = 443) -> list:
+    """v4 : teste TLS 1.0/1.1/1.2/1.3."""
+    versions = {
+        "TLSv1.0": getattr(ssl.TLSVersion, "TLSv1", None),
+        "TLSv1.1": getattr(ssl.TLSVersion, "TLSv1_1", None),
+        "TLSv1.2": ssl.TLSVersion.TLSv1_2,
+        "TLSv1.3": getattr(ssl.TLSVersion, "TLSv1_3", None),
+    }
+    supported = []
+    for name, ver in versions.items():
+        if ver is None: continue
+        try:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+            ctx.minimum_version = ver; ctx.maximum_version = ver
+            try: ctx.set_ciphers("ALL:@SECLEVEL=0")
+            except Exception: pass
+            with socket.create_connection((hostname, port), timeout=5) as sock:
+                with ctx.wrap_socket(sock, server_hostname=hostname):
+                    supported.append(name)
+        except Exception: continue
+    return supported
+
+
+# =========================================================
+# OSINT externe
+# =========================================================
+def shodan_internetdb(ip: str) -> dict:
+    """API Shodan InternetDB — gratuit, sans clé."""
+    try:
+        r = requests.get(f"https://internetdb.shodan.io/{ip}", timeout=8)
+        if r.status_code == 200:
+            d = r.json()
+            return {"ports": d.get("ports", [])[:100],
+                    "hostnames": d.get("hostnames", [])[:30],
+                    "cpes": d.get("cpes", [])[:20],
+                    "tags": d.get("tags", [])[:20],
+                    "vulns": d.get("vulns", [])[:30]}
+        elif r.status_code == 404:
+            return {"ports": [], "hostnames": [], "cpes": [], "tags": [], "vulns": []}
+    except Exception: pass
+    return {}
+
+
+def wayback_check(url: str) -> dict:
+    """Wayback Machine — dernier snapshot."""
+    try:
+        r = requests.get(f"http://archive.org/wayback/available?url={url}", timeout=8)
+        if r.status_code == 200:
+            d = r.json()
+            snap = d.get("archived_snapshots", {}).get("closest", {})
+            if snap:
+                return {"available": 1, "url": snap.get("url"),
+                        "timestamp": snap.get("timestamp")}
+    except Exception: pass
+    return {"available": 0}
 PYEOF
 
 # ============================================================
-# scanner.py — intègre tous les nouveaux appels
+# scanner.py — v4 : intègre tous les nouveaux appels
 # ============================================================
 cat > backend/scanner.py <<'PYEOF'
 import subprocess, json, socket, nmap, re, time
@@ -739,13 +978,23 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from intel import (
-    enumerate_dns, enumerate_dns_extra, analyze_email_security,
-    try_zone_transfer, get_subdomains_crtsh, get_whois, get_geolocation,
-    analyze_security_headers, detect_technologies, detect_waf_cdn,
-    analyze_cookies, detect_http_methods, get_robots, check_sensitive_paths,
-    get_security_txt, check_sitemap, extract_meta_tags, extract_emails,
-    extract_social_links, extract_html_stats, extract_structured_data,
+    enumerate_dns, enumerate_dns_extra, enumerate_dns_modern,
+    analyze_email_security, check_wildcard_dns, try_zone_transfer,
+    get_subdomains_crtsh, check_ct_logs, get_whois, get_geolocation,
+    analyze_security_headers, analyze_modern_headers,
+    get_hsts_info, check_hsts_preload,
+    detect_technologies, detect_waf_cdn,
+    analyze_cookies, analyze_cookies_detailed,
+    parse_server_timing, parse_cache_detail, check_http3,
+    detect_http_methods, get_robots, check_sensitive_paths,
+    get_security_txt, check_sitemap,
+    extract_meta_tags, extract_emails, extract_social_links,
+    extract_html_stats, extract_structured_data,
+    extract_html_comments, extract_js_endpoints,
+    extract_script_srcs, extract_asset_urls,
+    extract_i18n, extract_forms_detail, extract_meta_refresh,
     get_favicon_hash, get_redirect_chain, check_http2,
+    probe_tls_versions, shodan_internetdb, wayback_check,
 )
 
 BASE_KEYS = {
@@ -754,13 +1003,20 @@ BASE_KEYS = {
     "content_type": None, "content_size": None, "charset": None,
     "response_time_ms": None, "http_methods": None,
     "powered_by": None, "cache_control": None,
-    "http2": None, "compression": None, "raw_headers": None,
+    "http2": None, "http3": None, "compression": None,
+    "server_timing": None, "cache_detail": None,
+    "x_robots_tag": None, "content_language": None,
+    "raw_headers": None,
     "security_headers": None, "security_score": None,
-    "security_missing": None, "cookies": None,
+    "security_missing": None,
+    "modern_headers": None, "modern_missing": None,
+    "modern_score": None, "security_score_ext": None,
+    "hsts_max_age": None, "hsts_preload": None, "hsts_preloaded": None,
+    "cookies": None, "cookies_detail": None,
     "sensitive_paths": None, "robots_txt": None,
-    "security_txt": None, "sitemap_found": None,
-    "tls_version": None, "tls_cipher": None, "cert_chain_len": None,
-    "cert_subject": None, "cert_issuer": None,
+    "security_txt": None, "sitemap_found": None, "meta_refresh": None,
+    "tls_version": None, "tls_cipher": None, "tls_versions_supported": None,
+    "cert_chain_len": None, "cert_subject": None, "cert_issuer": None,
     "cert_valid_from": None, "cert_valid_until": None,
     "cert_days_left": None, "cert_expired": None, "cert_san": None,
     "ssl_ciphers": None,
@@ -768,10 +1024,14 @@ BASE_KEYS = {
     "technologies": None, "screenshot": None,
     "meta_tags": None, "emails": None, "social_links": None,
     "favicon_hash": None, "html_stats": None, "structured_data": None,
-    "dns_records": None, "dns_extra": None, "dnssec": None,
-    "dns_zone_transfer": None, "email_security": None,
-    "subdomains": None, "whois_data": None,
-    "geolocation": None, "reverse_dns": None,
+    "html_comments": None, "js_endpoints": None,
+    "script_srcs": None, "asset_urls": None,
+    "i18n": None, "forms_detail": None,
+    "dns_records": None, "dns_extra": None, "dns_modern": None,
+    "wildcard_dns": None, "dnssec": None, "dns_zone_transfer": None,
+    "email_security": None, "subdomains": None, "ct_logs_count": None,
+    "whois_data": None, "geolocation": None, "reverse_dns": None,
+    "shodan_internetdb": None, "wayback": None,
     "waf": None, "cdn": None, "os_guess": None,
 }
 
@@ -793,8 +1053,7 @@ def resolve_target(target: str) -> dict:
     else:
         hostname = target; scheme = "https"; url = f"https://{target}"
     ips = []
-    try:
-        ips = [str(r) for r in dns.resolver.resolve(hostname, 'A')]
+    try: ips = [str(r) for r in dns.resolver.resolve(hostname, 'A')]
     except Exception:
         try: ips = [socket.gethostbyname(hostname)]
         except Exception: ips = []
@@ -830,8 +1089,7 @@ def scan_certificate(hostname: str, port: int = 443) -> dict:
         try:
             san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
             result["san"] = san_ext.value.get_values_for_type(x509.DNSName)
-        except x509.ExtensionNotFound:
-            result["san"] = []
+        except x509.ExtensionNotFound: result["san"] = []
     except Exception as e:
         result["error"] = str(e)
     return result
@@ -840,8 +1098,7 @@ def scan_certificate(hostname: str, port: int = 443) -> dict:
 def crawl_links(url: str, max_links: int = 50, same_domain: bool = True) -> list:
     links = []
     try:
-        r = requests.get(url, headers={"User-Agent": "IPExpertScanner/3.0"},
-                        timeout=10, verify=False)
+        r = requests.get(url, headers={"User-Agent": "IPExpertScanner/4.0"}, timeout=10, verify=False)
         soup = BeautifulSoup(r.text, "html.parser")
         base = urlparse(url).netloc
         for a in soup.find_all("a", href=True):
@@ -879,7 +1136,7 @@ def capture_screenshot(url: str, filename: str):
 
 def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
     result = {**BASE_KEYS}; result["url"] = url
-    headers_req = {"User-Agent": "IPExpertScanner/3.0"}
+    headers_req = {"User-Agent": "IPExpertScanner/4.0"}
     html_body = ""; last_resp_headers = {}
 
     t0 = time.time()
@@ -895,23 +1152,52 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
         result["charset"] = r.encoding or ""
         result["content_size"] = len(r.content)
         result["compression"] = r.headers.get("Content-Encoding", "none") or "none"
+        result["x_robots_tag"] = (r.headers.get("X-Robots-Tag") or "")[:200] or None
+        result["content_language"] = (r.headers.get("Content-Language") or "")[:60] or None
         result["raw_headers"] = json.dumps(dict(r.headers))[:4000]
         if r.is_redirect:
             result["redirect_to"] = r.headers.get("Location", "")[:200]
         html_body = r.text; last_resp_headers = dict(r.headers)
 
+        # Titre
         m = re.search(r"<title[^>]*>(.*?)</title>", html_body[:6000], re.IGNORECASE | re.DOTALL)
         if m: result["title"] = re.sub(r"\s+", " ", m.group(1)).strip()[:150]
 
+        # Sécurité classique
         sec = analyze_security_headers(last_resp_headers)
         result["security_headers"] = json.dumps(sec["present"])[:4000]
         result["security_missing"] = json.dumps(sec["missing"])
         result["security_score"] = sec["score"]
+
+        # Sécurité moderne
+        modern = analyze_modern_headers(last_resp_headers)
+        result["modern_headers"] = json.dumps(modern["present"])[:4000]
+        result["modern_missing"] = json.dumps(modern["missing"])
+        result["modern_score"] = modern["score"]
+        result["security_score_ext"] = sec["score"] + modern["score"]
+
+        # HSTS
+        hsts = get_hsts_info(last_resp_headers)
+        result["hsts_max_age"] = hsts["max_age"]
+        result["hsts_preload"] = hsts["preload"]
+
+        # Cookies
         result["cookies"] = json.dumps(analyze_cookies(r))[:2000]
+        result["cookies_detail"] = json.dumps(analyze_cookies_detailed(r))[:4000]
+
+        # WAF / CDN
         waf, cdn = detect_waf_cdn(last_resp_headers)
         result["waf"] = waf; result["cdn"] = cdn
 
+        # HTTP/3 + Server-Timing + Cache
+        result["http3"] = check_http3(last_resp_headers)
+        st = parse_server_timing(last_resp_headers)
+        if st: result["server_timing"] = json.dumps(st)[:2000]
+        result["cache_detail"] = json.dumps(parse_cache_detail(last_resp_headers))[:2000]
+
+        # Redirect chain
         result["redirect_chain"] = json.dumps(get_redirect_chain(url))[:4000]
+
     except requests.exceptions.SSLError:
         result["server_header"] = "SSL_ERROR"
     except requests.exceptions.ConnectionError:
@@ -921,13 +1207,28 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
     except Exception as e:
         result["server_header"] = f"ERROR: {type(e).__name__}"
 
-    # ---------- Analyse HTML ----------
+    # ---------- HTML analysis ----------
     if html_body:
         result["technologies"] = json.dumps(detect_technologies(last_resp_headers, html_body))[:2000]
         result["meta_tags"] = json.dumps(extract_meta_tags(html_body))[:4000]
         result["emails"] = json.dumps(extract_emails(html_body))[:2000]
         result["html_stats"] = json.dumps(extract_html_stats(html_body))[:2000]
         result["structured_data"] = json.dumps(extract_structured_data(html_body))[:2000]
+        # v4
+        comments = extract_html_comments(html_body)
+        if comments: result["html_comments"] = json.dumps(comments)[:4000]
+        endpoints = extract_js_endpoints(html_body)
+        if endpoints: result["js_endpoints"] = json.dumps(endpoints)[:4000]
+        srcs = extract_script_srcs(html_body)
+        if srcs: result["script_srcs"] = json.dumps(srcs)[:2000]
+        assets = extract_asset_urls(html_body)
+        if assets: result["asset_urls"] = json.dumps(assets)[:3000]
+        i18n = extract_i18n(html_body)
+        if i18n: result["i18n"] = json.dumps(i18n)[:1000]
+        forms = extract_forms_detail(html_body)
+        if forms: result["forms_detail"] = json.dumps(forms)[:2000]
+        mr = extract_meta_refresh(html_body)
+        if mr: result["meta_refresh"] = mr
 
     # ---------- HTTP avancé ----------
     methods = detect_http_methods(url)
@@ -935,12 +1236,14 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
     hostname = urlparse(url).hostname
     if url.startswith("https://") and hostname:
         result["http2"] = check_http2(hostname)
+        tls_versions = probe_tls_versions(hostname)
+        if tls_versions: result["tls_versions_supported"] = json.dumps(tls_versions)
 
     # ---------- Fichiers ----------
     robots = get_robots(url)
     if robots: result["robots_txt"] = robots
-    st = get_security_txt(url)
-    if st: result["security_txt"] = st
+    st_txt = get_security_txt(url)
+    if st_txt: result["security_txt"] = st_txt
     result["sitemap_found"] = check_sitemap(url)
 
     # ---------- Chemins sensibles ----------
@@ -968,12 +1271,18 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
         dns_extra = enumerate_dns_extra(hostname, dns_data)
         result["dns_extra"] = json.dumps(dns_extra)[:4000]
         result["dnssec"] = 1 if dns_extra.get("dnssec") else 0
+        # v4
+        dns_modern = enumerate_dns_modern(hostname)
+        if dns_modern: result["dns_modern"] = json.dumps(dns_modern)[:3000]
+        result["wildcard_dns"] = check_wildcard_dns(hostname)
         result["email_security"] = json.dumps(analyze_email_security(hostname, dns_extra))[:2000]
         result["subdomains"] = json.dumps(get_subdomains_crtsh(hostname))[:5000]
-        # AXFR sur les NS
+        result["ct_logs_count"] = check_ct_logs(hostname)
+        # HSTS preload
+        result["hsts_preloaded"] = check_hsts_preload(hostname)
+        # AXFR
         ns_list = dns_data.get("ns", [])[:3]
-        if ns_list:
-            result["dns_zone_transfer"] = try_zone_transfer(hostname, ns_list)
+        if ns_list: result["dns_zone_transfer"] = try_zone_transfer(hostname, ns_list)
         whois_data = get_whois(hostname)
         if whois_data: result["whois_data"] = json.dumps(whois_data)[:4000]
         try: result["reverse_dns"] = socket.gethostbyaddr(hostname)[0]
@@ -983,9 +1292,16 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
     if ip:
         geo = get_geolocation(ip)
         if geo: result["geolocation"] = json.dumps(geo)[:2000]
+        # v4 : Shodan InternetDB
+        shodan = shodan_internetdb(ip)
+        if shodan: result["shodan_internetdb"] = json.dumps(shodan)[:3000]
 
     # ---------- Favicon ----------
     result["favicon_hash"] = get_favicon_hash(url)
+
+    # ---------- Wayback ----------
+    wb = wayback_check(url)
+    if wb: result["wayback"] = json.dumps(wb)[:1000]
 
     # ---------- Crawl + social ----------
     if do_crawl:
@@ -1018,8 +1334,7 @@ def masscan_discover(target, ports="1-65535", rate=1000):
             ip = entry.get("ip")
             for p in entry.get("ports", []):
                 if p.get("status") == "open": out.append((ip, p["port"]))
-        except json.JSONDecodeError:
-            continue
+        except json.JSONDecodeError: continue
     return out
 
 
@@ -1029,14 +1344,10 @@ def nmap_fingerprint(open_ports, version_scan=False, os_scan=False, ssl_enum=Fal
     for ip, port in open_ports:
         by_ip.setdefault(ip, []).append(port)
     results = []; nm = nmap.PortScanner()
-    if ssl_enum:
-        args = "-sV -T4 --script ssl-enum-ciphers"
-    elif os_scan:
-        args = "-sV -O -T4 --open"
-    elif version_scan:
-        args = "-sV -T4"
-    else:
-        args = "-T4"
+    if ssl_enum: args = "-sV -T4 --script ssl-enum-ciphers"
+    elif os_scan: args = "-sV -O -T4 --open"
+    elif version_scan: args = "-sV -T4"
+    else: args = "-T4"
     for ip, ports in by_ip.items():
         port_str = ",".join(str(p) for p in sorted(set(ports)))
         try: nm.scan(hosts=ip, ports=port_str, arguments=args)
@@ -1046,16 +1357,12 @@ def nmap_fingerprint(open_ports, version_scan=False, os_scan=False, ssl_enum=Fal
         for proto in nm[ip].all_protocols():
             for port in nm[ip][proto].keys():
                 info = nm[ip][proto][port]
-                result = {
-                    "ip": ip, "port": port, "protocol": proto,
+                result = {"ip": ip, "port": port, "protocol": proto,
                     "service": info.get("name", "unknown"),
                     "version": f"{info.get('product','')} {info.get('version','')}".strip(),
-                    "state": info.get("state", "open"),
-                    "os_guess": os_name,
-                }
+                    "state": info.get("state", "open"), "os_guess": os_name}
                 if ssl_enum and "script" in info:
-                    scripts = info["script"]
-                    for sname, sdata in scripts.items():
+                    for sname, sdata in info["script"].items():
                         if "ssl-enum" in sname:
                             result["ssl_ciphers"] = sdata[:4000]
                 results.append(result)
@@ -1074,8 +1381,7 @@ def probe_unknown(ip, port):
                 if name == "ssh" and b"SSH-" in data: return "ssh"
                 if name == "smtp" and b"220" in data: return "smtp"
                 if name == "ftp" and b"220" in data: return "ftp"
-        except (socket.timeout, ConnectionRefusedError, OSError):
-            continue
+        except (socket.timeout, ConnectionRefusedError, OSError): continue
     return "unknown"
 
 
@@ -1087,15 +1393,20 @@ def _enrich_ip_results(results):
         if ip in ip_meta:
             r["reverse_dns"] = ip_meta[ip]["reverse_dns"]
             r["geolocation"] = ip_meta[ip]["geolocation"]
+            r["shodan_internetdb"] = ip_meta[ip]["shodan_internetdb"]
             continue
-        meta = {"reverse_dns": None, "geolocation": None}
+        meta = {"reverse_dns": None, "geolocation": None, "shodan_internetdb": None}
         try: meta["reverse_dns"] = socket.gethostbyaddr(ip)[0]
         except Exception: pass
         geo = get_geolocation(ip)
         if geo: meta["geolocation"] = json.dumps(geo)[:2000]
+        # v4 : Shodan InternetDB
+        shodan = shodan_internetdb(ip)
+        if shodan: meta["shodan_internetdb"] = json.dumps(shodan)[:3000]
         ip_meta[ip] = meta
         r["reverse_dns"] = meta["reverse_dns"]
         r["geolocation"] = meta["geolocation"]
+        r["shodan_internetdb"] = meta["shodan_internetdb"]
     return results
 
 
@@ -1171,8 +1482,8 @@ celery_app = Celery("scanner",
     broker=os.getenv("REDIS_URL", "redis://redis:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://redis:6379/0"))
 celery_app.conf.broker_connection_retry_on_startup = True
-celery_app.conf.task_time_limit = 240
-celery_app.conf.task_soft_time_limit = 200
+celery_app.conf.task_time_limit = 300
+celery_app.conf.task_soft_time_limit = 260
 
 def get_prior_ips(db):
     cutoff = datetime.utcnow() - timedelta(days=7)
@@ -1180,7 +1491,7 @@ def get_prior_ips(db):
               .filter(HostResult.state == "open").distinct().all())
     return [r[0] for r in rows]
 
-@celery_app.task(time_limit=240, soft_time_limit=200)
+@celery_app.task(time_limit=300, soft_time_limit=260)
 def run_scan(job_id):
     db = SessionLocal()
     job = db.query(ScanJob).get(job_id)
@@ -1194,7 +1505,7 @@ def run_scan(job_id):
             db.add(HostResult(job_id=job.id, last_seen=now, **r))
         job.status = "done"
     except SoftTimeLimitExceeded:
-        job.status = "error"; print(f"Timeout: job {job_id} > 200s")
+        job.status = "error"; print(f"Timeout: job {job_id} > 260s")
     except Exception as e:
         job.status = "error"; print("Erreur:", e)
     finally:
@@ -1216,7 +1527,7 @@ from scanner import detect_target_type
 import os, traceback
 
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="IP Expert Scanner v3")
+app = FastAPI(title="IP Expert Scanner v4")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class ScanRequest(BaseModel):
@@ -1227,16 +1538,23 @@ class ScanRequest(BaseModel):
 FIELDS = ["ip","port","service","version","state","protocol","url","http_status",
     "server_header","title","redirect_to","redirect_chain","content_type",
     "content_size","charset","response_time_ms","http_methods","powered_by",
-    "cache_control","http2","compression","raw_headers",
-    "security_headers","security_score","security_missing","cookies",
-    "sensitive_paths","robots_txt","security_txt","sitemap_found",
-    "tls_version","tls_cipher","cert_chain_len","cert_subject","cert_issuer",
-    "cert_valid_from","cert_valid_until","cert_days_left","cert_expired",
-    "cert_san","ssl_ciphers",
+    "cache_control","http2","http3","compression",
+    "server_timing","cache_detail","x_robots_tag","content_language","raw_headers",
+    "security_headers","security_score","security_missing",
+    "modern_headers","modern_missing","modern_score","security_score_ext",
+    "hsts_max_age","hsts_preload","hsts_preloaded",
+    "cookies","cookies_detail","sensitive_paths","robots_txt",
+    "security_txt","sitemap_found","meta_refresh",
+    "tls_version","tls_cipher","tls_versions_supported","cert_chain_len",
+    "cert_subject","cert_issuer","cert_valid_from","cert_valid_until",
+    "cert_days_left","cert_expired","cert_san","ssl_ciphers",
     "links_count","links_json","technologies","screenshot",
     "meta_tags","emails","social_links","favicon_hash","html_stats","structured_data",
-    "dns_records","dns_extra","dnssec","dns_zone_transfer","email_security",
-    "subdomains","whois_data","geolocation","reverse_dns",
+    "html_comments","js_endpoints","script_srcs","asset_urls","i18n","forms_detail",
+    "dns_records","dns_extra","dns_modern","wildcard_dns","dnssec",
+    "dns_zone_transfer","email_security","subdomains","ct_logs_count",
+    "whois_data","geolocation","reverse_dns",
+    "shodan_internetdb","wayback",
     "waf","cdn","os_guess"]
 
 @app.post("/api/scan")
@@ -1249,14 +1567,12 @@ def create_scan(req: ScanRequest):
     try:
         job = ScanJob(target=req.target, target_type=ttype, ports=req.ports, mode=mode)
         db.add(job); db.commit(); db.refresh(job)
-        try:
-            run_scan.delay(job.id)
+        try: run_scan.delay(job.id)
         except Exception as e:
             traceback.print_exc(); job.status = "error"; db.commit()
             raise HTTPException(503, detail=f"File d'attente indisponible: {e}")
         return {"job_id": job.id, "status": "pending", "mode": mode, "target_type": ttype}
-    finally:
-        db.close()
+    finally: db.close()
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: int):
@@ -1330,13 +1646,13 @@ volumes:
 EOF
 
 # ============================================================
-# FRONTEND — v3 avec toutes les nouvelles vues
+# FRONTEND v4
 # ============================================================
 cat > frontend/index.html <<'HTML'
 <!DOCTYPE html>
 <html lang="fr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IP EXPERT // Scanner v3</title>
+<title>IP EXPERT // Scanner v4</title>
 <style>
 :root{--bg:#0d0221;--panel:#150a2e;--line:#3a1a5c;--pink:#ff2d95;--pink2:#ff006e;
 --pink3:#ff66b3;--ok:#00ff9d;--warn:#ffb800;--cyan:#00f0ff;--txt:#f0e6ff;--dim:#8a6ba8;
@@ -1445,9 +1761,9 @@ background:rgba(13,2,33,.6);padding:10px;border-radius:6px;white-space:pre-wrap;
 .modal-close{position:absolute;top:16px;right:20px;background:none;border:1px solid var(--pink);
 color:var(--pink);font-size:18px;width:36px;height:36px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
 .modal-close:hover{background:var(--pink);color:#fff}
-.kv{font-family:var(--mono);font-size:12px}
-.kv td{padding:4px 10px;border:none}
-.kv td:first-child{color:var(--dim)}
+.kv{font-family:var(--mono);font-size:12px;width:100%}
+.kv td{padding:4px 10px;border:none;vertical-align:top}
+.kv td:first-child{color:var(--dim);width:35%}
 </style></head><body>
 
 <svg class="bg-svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
@@ -1471,7 +1787,7 @@ color:var(--pink);font-size:18px;width:36px;height:36px;border-radius:50%;cursor
 <animateTransform attributeName="transform" type="rotate" from="0 28 28" to="360 28 28" dur="2s" repeatCount="indefinite"/></line>
 <circle cx="28" cy="28" r="3" fill="#ff2d95"/>
 </svg></div>
-<h1>IP <span>EXPERT</span> // SCANNER <span style="font-size:12px;color:var(--pink3);">v3</span></h1>
+<h1>IP <span>EXPERT</span> // SCANNER <span style="font-size:12px;color:var(--pink3);">v4</span></h1>
 </div>
 <div class="status-badge">
 <svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="3" fill="#00ff9d">
@@ -1481,7 +1797,7 @@ SYSTÈME EN LIGNE
 </header>
 
 <section class="console">
-<div class="console-title">◆ TERMINAL DE RECONNAISSANCE — OSINT complet</div>
+<div class="console-title">◆ TERMINAL DE RECONNAISSANCE — OSINT ULTRA</div>
 <div class="input-row">
 <div class="field"><label>Cible (IP, CIDR, URL)</label>
 <input id="target" placeholder="https://example.com ou 192.168.1.0/24" spellcheck="false"></div>
@@ -1499,7 +1815,7 @@ SYSTÈME EN LIGNE
 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16">
 <circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>SCAN</button>
 </div>
-<div class="hint">💡 URL → DNS avancé + email security + subdomains + WAF + meta + emails + favicon + HTTP/2 + security.txt + sitemap + technologies + SSL + WHOIS + géo</div>
+<div class="hint">💡 URL → HTTP/3 · COOP · Shodan · Wayback · TLS probe · JS endpoints · comments · CT logs · forms</div>
 <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
 <svg class="radar-spinner" id="radarSpinner" viewBox="0 0 32 32">
 <circle cx="16" cy="16" r="14" fill="none" stroke="#ff2d95" stroke-width="1" opacity=".3"/>
@@ -1582,60 +1898,79 @@ function httpClass(c){if(!c)return'';if(c>=200&&c<300)return'http-2xx';
 if(c>=300&&c<400)return'http-3xx';if(c>=400&&c<500)return'http-4xx';return'http-5xx';}
 function certClass(d){if(d===null||d===undefined)return'';if(d<0)return'cert-err';
 if(d<30)return'cert-warn';return'cert-ok';}
-function secClass(s){if(s===null||s===undefined)return'';if(s>=50)return'cert-ok';
-if(s>=25)return'cert-warn';return'cert-err';}
+function secClass(s,max){max=max||75;const r=(s||0)/max;if(r>=0.66)return'cert-ok';
+if(r>=0.33)return'cert-warn';return'cert-err';}
 function pJ(s,d){try{return s?JSON.parse(s):d;}catch(e){return d;}}
 
 function showCert(row){
+const tlsList = pJ(row.tls_versions_supported, []);
 $('modalBody').innerHTML=`
-<h3>🔒 Certificat SSL</h3>
+<h3>🔒 Certificat SSL + TLS</h3>
 <table class="kv">
 <tr><td>Sujet</td><td>${esc(row.cert_subject)||'—'}</td></tr>
 <tr><td>Émetteur</td><td>${esc(row.cert_issuer)||'—'}</td></tr>
-<tr><td>TLS</td><td>${esc(row.tls_version)||'—'} ${row.tls_cipher?'· '+esc(row.tls_cipher):''}</td></tr>
+<tr><td>TLS actif</td><td>${esc(row.tls_version)||'—'} ${row.tls_cipher?'· '+esc(row.tls_cipher):''}</td></tr>
+<tr><td>Versions supportées</td><td>${tlsList.length?tlsList.map(v=>`<span class="tech-badge">${esc(v)}</span>`).join(' '):'—'}</td></tr>
 <tr><td>Chaîne</td><td>${row.cert_chain_len??'—'} certificat(s)</td></tr>
 <tr><td>Valide du</td><td>${esc(row.cert_valid_from)||'—'}</td></tr>
 <tr><td>Valide au</td><td>${esc(row.cert_valid_until)||'—'}</td></tr>
 <tr><td>Expire dans</td><td>${row.cert_days_left??'—'} jours</td></tr>
 <tr><td>SAN</td><td style="word-break:break-all">${esc(pJ(row.cert_san,[]).join(', '))}</td></tr>
+<tr><td>CT logs</td><td>${row.ct_logs_count??'—'} certs publics</td></tr>
 </table>
-${row.ssl_ciphers?`<h4>🔐 Ciphers (nmap ssl-enum-ciphers)</h4><pre>${esc(row.ssl_ciphers)}</pre>`:''}`;
+${row.ssl_ciphers?`<h4>🔐 Ciphers (nmap)</h4><pre>${esc(row.ssl_ciphers)}</pre>`:''}`;
 $('modal').classList.add('show');}
 
 function showSecurity(row){
-const p=pJ(row.security_headers,{}),m=pJ(row.security_missing,[]),
-ck=pJ(row.cookies,[]),paths=pJ(row.sensitive_paths,[]);
+const p=pJ(row.security_headers,{}),m=pJ(row.security_missing,[]);
+const pm=pJ(row.modern_headers,{}),mm=pJ(row.modern_missing,[]);
+const ck=pJ(row.cookies_detail,[]),paths=pJ(row.sensitive_paths,[]);
 $('modalBody').innerHTML=`
-<h3>🛡️ Sécurité — Score ${row.security_score??0}/75</h3>
-<h4 style="color:var(--ok)">✔ En-têtes présents</h4>
+<h3>🛡️ Sécurité</h3>
+<p class="kv" style="margin-bottom:8px">
+<b>Classique : ${row.security_score??0}/75</b> ·
+<b>Moderne : ${row.modern_score??0}/55</b> ·
+<b style="color:var(--pink)">Total : ${row.security_score_ext??0}/130</b>
+</p>
+<h4 style="color:var(--ok)">✔ Headers classiques (${Object.keys(p).length}/7)</h4>
 <ul style="color:var(--ok)">${Object.entries(p).map(([k,v])=>`<li><b>${esc(k)}</b> : <code>${esc(v)}</code></li>`).join('')||'<li>—</li>'}</ul>
-<h4 style="color:var(--pink2)">✘ Manquants</h4>
-<ul style="color:var(--pink2)">${m.map(x=>`<li>${esc(x)}</li>`).join('')||'<li>—</li>'}</ul>
+<h4 style="color:var(--cyan)">✔ Headers modernes (${Object.keys(pm).length}/8)</h4>
+<ul style="color:var(--cyan)">${Object.entries(pm).map(([k,v])=>`<li><b>${esc(k)}</b> : <code>${esc(v)}</code></li>`).join('')||'<li>—</li>'}</ul>
+<h4 style="color:var(--pink2)">✘ Manquants (classique + moderne)</h4>
+<ul style="color:var(--pink2)">${[...m,...mm].map(x=>`<li>${esc(x)}</li>`).join('')||'<li>—</li>'}</ul>
+<h4>🔐 HSTS</h4>
+<p class="kv">max-age : <b>${row.hsts_max_age??'—'}</b> s · preload flag : <b>${row.hsts_preload?'oui':'non'}</b> · preloaded (hstspreload.org) : <b style="color:${row.hsts_preloaded?'var(--ok)':'var(--dim)'}">${row.hsts_preloaded?'✅ oui':'non'}</b></p>
 <h4>🍪 Cookies (${ck.length})</h4>
-<table style="font-size:12px"><tr><th>Nom</th><th>Secure</th><th>HttpOnly</th><th>SameSite</th></tr>
-${ck.map(c=>`<tr><td>${esc(c.name)}</td><td>${c.secure?'✔':'✘'}</td>
-<td>${c.httponly?'✔':'✘'}</td><td>${c.samesite?'✔':'✘'}</td></tr>`).join('')||'<tr><td colspan="4">—</td></tr>'}
+<table style="font-size:12px;width:100%">
+<tr><th>Nom</th><th>Secure</th><th>HttpOnly</th><th>SameSite</th><th>Domain</th></tr>
+${ck.map(c=>`<tr><td>${esc(c.name)}</td>
+<td>${c.secure?'✔':'✘'}</td>
+<td>${c.httponly?'✔':'✘'}</td>
+<td>${esc(c.samesite)||'—'}</td>
+<td style="font-size:10px">${esc(c.domain)||'—'}</td></tr>`).join('')||'<tr><td colspan="5">—</td></tr>'}
 </table>
 ${paths.length?`<h4 style="color:var(--warn)">⚠ Chemins sensibles détectés</h4>
 <ul>${paths.map(x=>`<li><code>${esc(x.path)}</code> — HTTP ${x.status}</li>`).join('')}</ul>`:''}
 ${row.robots_txt?`<h4>🤖 robots.txt</h4><pre>${esc(row.robots_txt)}</pre>`:''}
-${row.security_txt?`<h4>📜 security.txt (RFC 9116)</h4><pre>${esc(row.security_txt)}</pre>`:''}
+${row.security_txt?`<h4>📜 security.txt</h4><pre>${esc(row.security_txt)}</pre>`:''}
 ${row.http_methods?`<h4>📡 Méthodes HTTP</h4><p>${esc(row.http_methods)}</p>`:''}
-${row.sitemap_found?'<p style="margin-top:10px;color:var(--ok)">✓ sitemap.xml trouvé</p>':''}`;
+${row.meta_refresh?`<h4>🔄 Meta refresh</h4><p><code>${esc(row.meta_refresh)}</code></p>`:''}`;
 $('modal').classList.add('show');}
 
 function showDns(row){
 const dns=pJ(row.dns_records,{}),extra=pJ(row.dns_extra,{}),
-whois=pJ(row.whois_data,{}),geo=pJ(row.geolocation,{});
+modern=pJ(row.dns_modern,{}),whois=pJ(row.whois_data,{}),geo=pJ(row.geolocation,{});
 $('modalBody').innerHTML=`
 <h3>🌐 DNS / WHOIS / Géo</h3>
 <h4 style="color:var(--pink3)">DNS de base</h4><pre>${esc(JSON.stringify(dns,null,2))}</pre>
-<h4 style="color:var(--pink3)">DNS avancé (CAA, SRV, DMARC, DKIM, DNSSEC)</h4>
+<h4 style="color:var(--pink3)">DNS extra (CAA, SRV, DMARC, DKIM, DNSSEC)</h4>
 <pre>${esc(JSON.stringify(extra,null,2))}</pre>
-<p class="kv">🔐 DNSSEC : <b style="color:${row.dnssec?'var(--ok)':'var(--pink2)'}">
-${row.dnssec?'activé':'absent'}</b></p>
-<p class="kv">⚠ Zone transfer (AXFR) : <b style="color:${row.dns_zone_transfer?'var(--pink2)':'var(--ok)'}">
-${row.dns_zone_transfer?'POSSIBLE !':'non autorisé'}</b></p>
+<h4 style="color:var(--pink3)">DNS moderne (HTTPS/SVCB, TLSA)</h4>
+<pre>${esc(JSON.stringify(modern,null,2))}</pre>
+<p class="kv">🔐 DNSSEC : <b style="color:${row.dnssec?'var(--ok)':'var(--pink2)'}">${row.dnssec?'activé':'absent'}</b></p>
+<p class="kv">🌐 Wildcard DNS : <b style="color:${row.wildcard_dns===1?'var(--warn)':'var(--ok)'}">${row.wildcard_dns===1?'détecté':(row.wildcard_dns===0?'non':'erreur')}</b></p>
+<p class="kv">⚠ Zone transfer (AXFR) : <b style="color:${row.dns_zone_transfer?'var(--pink2)':'var(--ok)'}">${row.dns_zone_transfer?'POSSIBLE !':'non autorisé'}</b></p>
+<p class="kv">📜 CT logs (crt.sh) : <b>${row.ct_logs_count??'—'}</b> certificats publics</p>
 <h4 style="color:var(--pink3)">WHOIS</h4><pre>${esc(JSON.stringify(whois,null,2))}</pre>
 <h4 style="color:var(--pink3)">Géolocalisation / ASN</h4>
 <pre>${esc(JSON.stringify(geo,null,2))}</pre>
@@ -1667,32 +2002,63 @@ $('modal').classList.add('show');}
 function showMeta(row){
 const m=pJ(row.meta_tags,{}),em=pJ(row.emails,[]),
 soc=pJ(row.social_links,[]),stats=pJ(row.html_stats,{}),
-sd=pJ(row.structured_data,[]);
+sd=pJ(row.structured_data,[]),comments=pJ(row.html_comments,[]),
+endpoints=pJ(row.js_endpoints,[]),srcs=pJ(row.script_srcs,[]),
+assets=pJ(row.asset_urls,[]),i18n=pJ(row.i18n,{}),forms=pJ(row.forms_detail,[]);
 $('modalBody').innerHTML=`
 <h3>📄 Meta / OSINT page</h3>
 <h4>Meta tags</h4>
 <pre>${esc(JSON.stringify(m,null,2))}</pre>
-<h4>📧 Emails trouvés (${em.length})</h4>
+<h4>🌍 i18n</h4>
+<pre>${esc(JSON.stringify(i18n,null,2))}</pre>
+<h4>💬 Commentaires HTML/JS (${comments.length})</h4>
+<ul style="max-height:200px">${comments.map(c=>`<li style="color:var(--dim);font-size:11px">${esc(c)}</li>`).join('')||'<li style="color:var(--dim)">—</li>'}</ul>
+<h4>🔌 Endpoints JS (${endpoints.length})</h4>
+<ul style="max-height:200px">${endpoints.map(x=>`<li><code>${esc(x)}</code></li>`).join('')||'<li style="color:var(--dim)">—</li>'}</ul>
+<h4>📜 Script src (${srcs.length})</h4>
+<ul style="max-height:150px">${srcs.map(x=>`<li><code>${esc(x)}</code></li>`).join('')||'<li style="color:var(--dim)">—</li>'}</ul>
+<h4>🎨 Assets CSS/IMG (${assets.length})</h4>
+<pre style="max-height:150px">${esc(JSON.stringify(assets,null,2))}</pre>
+<h4>📝 Formulaires (${forms.length})</h4>
+<pre>${esc(JSON.stringify(forms,null,2))}</pre>
+<h4>📧 Emails (${em.length})</h4>
 <ul>${em.map(x=>`<li>${esc(x)}</li>`).join('')||'<li style="color:var(--dim)">—</li>'}</ul>
 <h4>🌐 Réseaux sociaux (${soc.length})</h4>
 <ul>${soc.map(s=>`<li><b>${esc(s.network)}</b> — <a href="${esc(s.url)}" target="_blank">${esc(s.url)}</a></li>`).join('')||'<li style="color:var(--dim)">—</li>'}</ul>
 <h4>📊 Structure HTML</h4>
 <pre>${esc(JSON.stringify(stats,null,2))}</pre>
-<h4>🗂️ Données structurées (${sd.length})</h4>
+<h4>🗂️ JSON-LD (${sd.length})</h4>
 <pre>${esc(JSON.stringify(sd,null,2))}</pre>
 ${row.favicon_hash?`<p class="kv" style="margin-top:10px">🔖 Favicon hash (Shodan) : <code>${esc(row.favicon_hash)}</code></p>`:''}`;
 $('modal').classList.add('show');}
 
 function showHeaders(row){
-const h=pJ(row.raw_headers,{});
+const h=pJ(row.raw_headers,{}),st=pJ(row.server_timing,{}),cd=pJ(row.cache_detail,{});
 $('modalBody').innerHTML=`<h3>📋 Headers HTTP bruts</h3>
 <pre>${esc(JSON.stringify(h,null,2))}</pre>
+<h4>⏱️ Server-Timing</h4>
+<pre>${esc(JSON.stringify(st,null,2))}</pre>
+<h4>💾 Cache</h4>
+<pre>${esc(JSON.stringify(cd,null,2))}</pre>
 <h4>🔁 Redirect chain</h4>
 <pre>${esc(JSON.stringify(pJ(row.redirect_chain,[]),null,2))}</pre>
-<p class="kv">HTTP/2 : <b>${row.http2?'✅ supporté':'❌ non'}</b></p>
+<p class="kv">HTTP/2 : <b>${row.http2?'✅':'❌'}</b> · HTTP/3 : <b>${row.http3?'✅':'❌'}</b></p>
 <p class="kv">Compression : ${esc(row.compression)||'—'}</p>
-<p class="kv">Cache-Control : ${esc(row.cache_control)||'—'}</p>
+<p class="kv">X-Robots-Tag : ${esc(row.x_robots_tag)||'—'}</p>
+<p class="kv">Content-Language : ${esc(row.content_language)||'—'}</p>
 <p class="kv">X-Powered-By : ${esc(row.powered_by)||'—'}</p>`;
+$('modal').classList.add('show');}
+
+function showShodan(row){
+const s=pJ(row.shodan_internetdb,{}),wb=pJ(row.wayback,{});
+$('modalBody').innerHTML=`
+<h3>🛰️ Shodan InternetDB + Wayback</h3>
+<h4>Shodan InternetDB (gratuit)</h4>
+<pre>${esc(JSON.stringify(s,null,2))}</pre>
+${(s.ports||[]).length?`<p class="kv">Ports indexés : ${(s.ports||[]).map(p=>`<span class="tech-badge">${p}</span>`).join(' ')}</p>`:''}
+${(s.vulns||[]).length?`<p class="kv" style="color:var(--pink2)">⚠ Vulns : ${(s.vulns||[]).map(v=>`<span class="tech-badge" style="background:rgba(255,45,149,.3)">${esc(v)}</span>`).join(' ')}</p>`:''}
+<h4>Wayback Machine</h4>
+${wb.available?`<p class="kv">Dernier snapshot : <a href="${esc(wb.url)}" target="_blank" style="color:var(--cyan)">${esc(wb.timestamp)}</a></p>`:'<p style="color:var(--dim)">Pas de snapshot archivé</p>'}`;
 $('modal').classList.add('show');}
 
 function showLinks(row){
@@ -1703,8 +2069,7 @@ $('modalBody').innerHTML=`<h3>🕷️ Liens (${l.length})</h3>${html}`;
 $('modal').classList.add('show');}
 
 function showScreenshot(f){
-$('modalBody').innerHTML=`<h3>📸 Screenshot</h3>
-<img src="/screenshots/${esc(f)}" alt="screenshot">`;
+$('modalBody').innerHTML=`<h3>📸 Screenshot</h3><img src="/screenshots/${esc(f)}" alt="screenshot">`;
 $('modal').classList.add('show');}
 
 function afficherResultats(results, targetType){
@@ -1719,9 +2084,9 @@ body.innerHTML=`
 <table>
 <thead><tr>
 <th>URL</th><th>IP</th><th>HTTP</th><th>Titre</th>
-<th>Tech</th><th>WAF/CDN</th><th>Sécu</th><th>Cert</th>
-<th>Email</th><th>Subs</th><th>Géo</th><th>Perf</th><th>Liens</th>
-<th>📄</th><th>📋</th><th>📸</th>
+<th>Tech</th><th>WAF/CDN</th><th>Sécu</th><th>Modern</th><th>Total</th><th>Cert</th>
+<th>H3</th><th>Email</th><th>Subs</th><th>CT</th><th>Géo</th><th>Perf</th>
+<th>Liens</th><th>📄</th><th>📋</th><th>🛰️</th><th>📸</th>
 </tr></thead><tbody>
 ${results.map((r,i)=>{
 const tech=pJ(r.technologies,[]),geo=pJ(r.geolocation,{}),
@@ -1735,18 +2100,25 @@ return `<tr>
 ${tech.length>2?`<span class="tech-badge">+${tech.length-2}</span>`:''}</td>
 <td>${r.waf?`<span class="waf-badge">${esc(r.waf)}</span>`:''}
 ${r.cdn?`<span class="tech-badge">${esc(r.cdn)}</span>`:''}${!r.waf&&!r.cdn?'<span style="color:var(--dim)">—</span>':''}</td>
-<td class="cert-days ${secClass(r.security_score)}"
+<td class="cert-days ${secClass(r.security_score,75)}"
 onclick="showSecurity(window.__results[${i}])">${r.security_score??'—'}/75</td>
+<td class="cert-days ${secClass(r.modern_score,55)}"
+onclick="showSecurity(window.__results[${i}])">${r.modern_score??'—'}/55</td>
+<td class="cert-days ${secClass(r.security_score_ext,130)}"
+onclick="showSecurity(window.__results[${i}])" style="color:var(--pink)"><b>${r.security_score_ext??'—'}/130</b></td>
 <td class="cert-days ${certClass(r.cert_days_left)}"
 onclick="showCert(window.__results[${i}])">${r.cert_days_left!==null&&r.cert_days_left!==undefined?r.cert_days_left+'j':'—'}</td>
-<td class="cert-days ${secClass((emailSec.score||0)*25)}" style="font-size:10px"
+<td style="font-size:11px;text-align:center">${r.http3?'<span style="color:var(--ok)">✅</span>':'<span style="color:var(--dim)">—</span>'}</td>
+<td class="cert-days ${secClass((emailSec.score||0)*25,75)}" style="font-size:10px"
 onclick="showEmail(window.__results[${i}])">${emailSec.score??0}/${emailSec.max??3}</td>
 <td>${subs.length?`<a class="links-badge" onclick="showSubs(window.__results[${i}])">${subs.length}🔎</a>`:'—'}</td>
+<td style="font-size:10px">${r.ct_logs_count??'—'}</td>
 <td class="geo-cell">${geo.country_code?`<b>${esc(geo.country_code)}</b>`:'—'}</td>
-<td class="tls-cell">${r.response_time_ms??'—'}ms${r.http2?' 🌐':''}</td>
+<td class="tls-cell">${r.response_time_ms??'—'}ms</td>
 <td>${r.links_count?`<a class="links-badge" onclick="showLinks(window.__results[${i}])">${r.links_count}🔗</a>`:'—'}</td>
 <td><a class="links-badge" onclick="showMeta(window.__results[${i}])">📄</a></td>
 <td><a class="links-badge" onclick="showHeaders(window.__results[${i}])">📋</a></td>
+<td><a class="links-badge" onclick="showShodan(window.__results[${i}])">🛰️</a></td>
 <td>${r.screenshot?`<img src="/screenshots/${esc(r.screenshot)}" class="shot-thumb" onclick="showScreenshot('${esc(r.screenshot)}')">`:'—'}</td>
 </tr>`;}).join('')}
 </tbody></table>`;
@@ -1754,18 +2126,20 @@ onclick="showEmail(window.__results[${i}])">${emailSec.score??0}/${emailSec.max?
 body.innerHTML=`
 <table><thead><tr>
 <th>Adresse IP</th><th>Port</th><th>Proto</th><th>Service</th>
-<th>Version</th><th>OS</th><th>Géo</th><th>État</th>
+<th>Version</th><th>OS</th><th>Géo</th><th>Shodan</th><th>État</th>
 </tr></thead><tbody>
 ${results.map((r,i)=>{
-const geo=pJ(r.geolocation,{});
-return `<tr style="cursor:pointer" onclick="showDns(window.__results[${i}])">
-<td class="ip">${esc(r.ip)}</td>
+const geo=pJ(r.geolocation,{}),shodan=pJ(r.shodan_internetdb,{});
+const shPorts=(shodan.ports||[]).length;
+return `<tr>
+<td class="ip" onclick="showDns(window.__results[${i}])">${esc(r.ip)}</td>
 <td class="port">${r.port}</td>
 <td>${esc((r.protocol||'').toUpperCase())}</td>
 <td class="svc">${esc(r.service)||'—'}</td>
 <td class="ver">${esc(r.version)||'—'}</td>
 <td class="ver">${esc(r.os_guess)||'—'}</td>
 <td class="geo-cell">${geo.country_code?`<b>${esc(geo.country_code)}</b>`:'—'}</td>
+<td>${shPorts?`<a class="links-badge" onclick="showShodan(window.__results[${i}])">${shPorts}🛰️</a>`:'—'}</td>
 <td class="state"><span class="pill">${esc(r.state)||'—'}</span></td>
 </tr>`;}).join('')}
 </tbody></table>`;
@@ -1812,32 +2186,32 @@ done
 [[ $CELERY_OK -eq 0 ]] && echo -e "${YEL}[!]${NC} Worker ne répond pas — voir docker compose logs worker"
 
 ok "=============================================="
-ok " IP EXPERT SCANNER v3 — OSINT complet"
+ok " IP EXPERT SCANNER v4 — OSINT ULTRA"
 ok " Interface : http://localhost:${APP_PORT}"
 ok " API docs  : http://localhost:${APP_PORT}/docs"
 ok "=============================================="
 echo ""
-echo -e "${CYAN}Fonctionnalités v3 :${NC}"
-echo "  🌐 HTTP        → status, headers bruts, redirect chain, HTTP/2, compression"
-echo "  🔒 TLS         → cipher, chaîne, SAN, expiration"
-echo "  🌍 DNS         → A, AAAA, MX, NS, TXT, CNAME, SOA + CAA, SRV, DNSSEC, SPF, DKIM"
-echo "  📧 Email       → SPF, DMARC, DKIM + score /3"
-echo "  🔎 Subdomains  → crt.sh (Certificate Transparency)"
-echo "  ⚠️  AXFR        → test zone transfer"
-echo "  📜 WHOIS       → registrar, dates, NS"
-echo "  🗺️  Géo         → pays, ville, ISP, ASN"
-echo "  🛡️  Sécurité    → 7 headers + score /75 + cookies + chemins sensibles"
-echo "  🔥 WAF/CDN     → Cloudflare, Akamai, AWS, Fastly, Sucuri, Imperva…"
-echo "  🧬 Technologies → 30+ signatures"
-echo "  📄 Meta / OG   → description, keywords, og:*, twitter:*"
-echo "  📧 Emails      → extraction page"
-echo "  🌐 Social      → Twitter, LinkedIn, GitHub, etc."
-echo "  🔖 Favicon     → hash Shodan-compatible"
-echo "  📊 HTML stats  → forms, scripts, iframes, images"
-echo "  🗂️  JSON-LD     → structured data"
-echo "  📜 Fichiers    → robots.txt, security.txt, sitemap.xml"
-echo "  🕷️  Crawl       → liens internes (max 50)"
-echo "  📸 Screenshot  → Playwright headless"
-echo "  🌍 IP/CIDR     → Masscan + Nmap (-O en deep)"
+echo -e "${CYAN}Nouveautés v4 :${NC}"
+echo "  🌐 HTTP/3          → détection via Alt-Svc"
+echo "  ⏱️  Server-Timing   → latences edge (slb_crtt, slb_ssl…)"
+echo "  🛡️  Headers modernes → COOP, COEP, CORP, OAC, Reporting-Endpoints, Document-Policy"
+echo "  📊 Score étendu    → classique /75 + moderne /55 = /130"
+echo "  🔐 HSTS preload    → status hstspreload.org"
+echo "  🔒 TLS probe       → teste TLS 1.0/1.1/1.2/1.3"
+echo "  🌍 DNS moderne     → HTTPS/SVCB (type 65), TLSA (type 52)"
+echo "  🔀 Wildcard DNS    → détection wildcard A"
+echo "  📜 CT logs count   → nombre de certs dans les logs publics"
+echo "  🛰️  Shodan InternetDB → ports/hostnames/CPEs/vulns (gratuit, sans clé)"
+echo "  🕰️  Wayback Machine → dernier snapshot archivé"
+echo "  💬 HTML comments   → leak potentiel dans les commentaires"
+echo "  🔌 JS endpoints    → /api/*, fetch, axios détectés"
+echo "  📜 Script srcs     → liste <script src>"
+echo "  🎨 Asset URLs      → CSS + images"
+echo "  🌍 i18n            → lang + hreflang"
+echo "  📝 Forms detail    → action, method, inputs, CSRF tokens"
+echo "  🍪 Cookies detail  → SameSite value, Domain, Path"
+echo "  🔄 Meta refresh    → détection"
+echo "  💾 Cache detail    → Age, X-Cache, X-Cache-Hits, Vary"
+echo "  📡 X-Robots-Tag / Content-Language"
 echo ""
 echo -e "${RED}⚠ Ne scannez que des réseaux autorisés.${NC}"
