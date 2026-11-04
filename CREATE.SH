@@ -2,6 +2,7 @@
 # ============================================================
 #  IP EXPERT SCANNER v4 — Rose Fluo + OSINT ULTRA complet
 #  Port web : 9745 · Usage: sudo ./CREATE.SH
+#  FIX: analyze_email_security + SQLAlchemy 2.0 + celery alias
 # ============================================================
 set -euo pipefail
 
@@ -222,8 +223,7 @@ Index("ix_host_port", HostResult.ip, HostResult.port)
 EOF
 
 # ============================================================
-# intel.py — v4 : OSINT étendu avec en-têtes modernes, HTTP/3,
-#                 Shodan InternetDB, Wayback, TLS probe, HTML comments
+# intel.py — v4 : OSINT étendu + FIX analyze_email_security
 # ============================================================
 cat > backend/intel.py <<'PYEOF'
 """Collecte OSINT v4 : DNS, WHOIS, Géo, Sécurité (classique + moderne),
@@ -377,6 +377,37 @@ def enumerate_dns_extra(hostname: str, dns_base: dict) -> dict:
         out["dnssec"] = True
     except Exception: pass
     return out
+
+
+def analyze_email_security(hostname: str, dns_extra: dict) -> dict:
+    """Analyse SPF / DMARC / DKIM depuis les données DNS déjà collectées.
+    Score max : 3 (1 point par mécanisme présent)."""
+    spf = dns_extra.get("spf")
+    dmarc = dns_extra.get("dmarc")
+    dkim_selectors = dns_extra.get("dkim_selectors", []) or []
+
+    spf_policy = None
+    if spf:
+        m = re.search(r"([~\-+?]all)", spf)
+        if m:
+            spf_policy = m.group(1)
+
+    dmarc_policy = None
+    if dmarc:
+        m = re.search(r"p\s*=\s*(\w+)", dmarc)
+        if m:
+            dmarc_policy = m.group(1).lower()
+
+    return {
+        "spf_present": bool(spf),
+        "spf_policy": spf_policy,
+        "dmarc_present": bool(dmarc),
+        "dmarc_policy": dmarc_policy,
+        "dkim_present": bool(dkim_selectors),
+        "dkim_selectors": dkim_selectors,
+        "score": int(bool(spf)) + int(bool(dmarc)) + int(bool(dkim_selectors)),
+        "max": 3,
+    }
 
 
 def enumerate_dns_modern(hostname: str) -> dict:
@@ -960,7 +991,7 @@ def wayback_check(url: str) -> dict:
 PYEOF
 
 # ============================================================
-# scanner.py — v4 : intègre tous les nouveaux appels
+# scanner.py — v4 (FIX reverse_dns sur IP)
 # ============================================================
 cat > backend/scanner.py <<'PYEOF'
 import subprocess, json, socket, nmap, re, time
@@ -1285,8 +1316,12 @@ def scan_url_full(url, ip=None, job_id=None, do_crawl=True, do_screenshot=True):
         if ns_list: result["dns_zone_transfer"] = try_zone_transfer(hostname, ns_list)
         whois_data = get_whois(hostname)
         if whois_data: result["whois_data"] = json.dumps(whois_data)[:4000]
-        try: result["reverse_dns"] = socket.gethostbyaddr(hostname)[0]
-        except Exception: pass
+        # FIX : reverse DNS sur l'IP résolue, pas sur le FQDN
+        try:
+            if ip:
+                result["reverse_dns"] = socket.gethostbyaddr(ip)[0]
+        except Exception:
+            pass
 
     # ---------- Géo ----------
     if ip:
@@ -1467,7 +1502,7 @@ def scan_target(target, ports="1-1000", mode="balanced", prior_ips=None, job_id=
 PYEOF
 
 # ============================================================
-# tasks.py
+# tasks.py — FIX db.get + alias celery
 # ============================================================
 cat > backend/tasks.py <<'EOF'
 from celery import Celery
@@ -1485,6 +1520,10 @@ celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.task_time_limit = 300
 celery_app.conf.task_soft_time_limit = 260
 
+# FIX : alias requis par `celery -A tasks worker`
+celery = celery_app
+app = celery_app
+
 def get_prior_ips(db):
     cutoff = datetime.utcnow() - timedelta(days=7)
     rows = (db.query(HostResult.ip).filter(HostResult.last_seen > cutoff)
@@ -1494,7 +1533,11 @@ def get_prior_ips(db):
 @celery_app.task(time_limit=300, soft_time_limit=260)
 def run_scan(job_id):
     db = SessionLocal()
-    job = db.query(ScanJob).get(job_id)
+    # FIX : SQLAlchemy 2.0 — Query.get() supprimé
+    job = db.get(ScanJob, job_id)
+    if job is None:
+        db.close()
+        return
     job.status = "running"; db.commit()
     try:
         prior = get_prior_ips(db) if job.mode == "smart" else None
@@ -1513,7 +1556,7 @@ def run_scan(job_id):
 EOF
 
 # ============================================================
-# main.py — sérialise tous les nouveaux champs
+# main.py — FIX db.get
 # ============================================================
 cat > backend/main.py <<'EOF'
 from fastapi import FastAPI, HTTPException
@@ -1577,7 +1620,8 @@ def create_scan(req: ScanRequest):
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: int):
     db = SessionLocal()
-    job = db.query(ScanJob).get(job_id)
+    # FIX : SQLAlchemy 2.0 — Query.get() supprimé
+    job = db.get(ScanJob, job_id)
     if not job: raise HTTPException(404, "Job introuvable")
     results = [{f: getattr(r, f, None) for f in FIELDS} for r in job.results]
     db.close()
@@ -2173,6 +2217,13 @@ if docker compose exec -T api python -c "import packaging, kombu, whois, dns, nm
   ok "Dépendances Python OK"
 else
   fail "Dépendances manquantes → rebuild."
+fi
+
+log "Vérification import analyze_email_security..."
+if docker compose exec -T api python -c "from intel import analyze_email_security; print('OK')" 2>/dev/null; then
+  ok "analyze_email_security importable"
+else
+  fail "intel.py cassé — analyze_email_security manquant."
 fi
 
 log "Ping Celery..."
